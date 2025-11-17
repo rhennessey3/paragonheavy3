@@ -45,12 +45,29 @@ export default function OrgSelectionPage() {
     
     setIsCreating(true);
     try {
-      // For now, just create in our database
-      // TODO: Integrate with Clerk organization creation
+      // Create organization in Clerk first
+      const response = await fetch('/api/organizations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          type: data.type,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create organization');
+      }
+
+      const clerkOrg = await response.json();
+      
+      // Then create in our database with the real Clerk org ID
       const orgId = await createOrganization({
         name: data.name,
         type: data.type,
-        clerkOrgId: `temp_${Date.now()}`, // Temporary ID until Clerk integration
+        clerkOrgId: clerkOrg.id,
         createdBy: user.id,
       });
       
@@ -65,9 +82,26 @@ export default function OrgSelectionPage() {
     }
   };
 
-  const handleSelectOrganization = (clerkOrgId: string) => {
-    // This will be handled by Clerk's organization switcher
-    window.location.href = `/dashboard`;
+  const handleSelectOrganization = async (clerkOrgId: string) => {
+    try {
+      // Use Clerk's organization switcher
+      const response = await fetch('/api/switch-organization', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ organizationId: clerkOrgId }),
+      });
+
+      if (response.ok) {
+        window.location.href = '/dashboard';
+      } else {
+        throw new Error('Failed to switch organization');
+      }
+    } catch (error) {
+      toast.error("Failed to switch organization. Please try again.");
+      console.error("Error switching organization:", error);
+    }
   };
 
   if (!user) {
@@ -90,13 +124,13 @@ export default function OrgSelectionPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {organizations && organizations.map((org) => (
-                  <div key={org._id} className="flex items-center justify-between p-4 border rounded-lg">
+                {organizations && organizations.filter(Boolean).map((org) => (
+                  <div key={org!._id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div>
-                      <h3 className="font-semibold">{org.name}</h3>
-                      <p className="text-sm text-gray-600 capitalize">{org.type}</p>
+                      <h3 className="font-semibold">{org!.name}</h3>
+                      <p className="text-sm text-gray-600 capitalize">{org!.type}</p>
                     </div>
-                    <Button onClick={() => handleSelectOrganization(org.clerkOrgId)}>
+                    <Button onClick={() => handleSelectOrganization(org!.clerkOrgId)}>
                       Enter Organization
                     </Button>
                   </div>
