@@ -1,5 +1,6 @@
 import { Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
@@ -17,12 +18,14 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider>
-      <html lang="en">
-        <body className={inter.className}>
-          {children}
-          <Toaster />
-        </body>
-      </html>
+      <ConvexClientProvider>
+        <html lang="en">
+          <body className={inter.className}>
+            {children}
+            <Toaster />
+          </body>
+        </html>
+      </ConvexClientProvider>
     </ClerkProvider>
   );
 }

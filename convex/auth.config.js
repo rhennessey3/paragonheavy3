@@ -1,36 +1,28 @@
 import { convexAuth } from "@convex-dev/auth/server";
-import { verifyToken } from "@clerk/backend";
 
-const clerkAuth = {
-  id: "clerk",
-  authorize: async (token) => {
-    try {
-      // Verify the JWT token from Clerk
-      const payload = await verifyToken(token, {
-        secretKey: process.env.CLERK_SECRET_KEY,
-      });
-      
-      if (payload) {
-        return {
-          id: payload.sub,
-          name: payload.first_name && payload.last_name 
-            ? `${payload.first_name} ${payload.last_name}`
-            : payload.username || payload.email,
-          email: payload.email,
-          image: payload.picture_url,
-          orgId: payload.org_id, // Include organization ID from JWT
-          orgRole: payload.org_role, // Include organization role from JWT
-        };
-      }
-    } catch (error) {
-      console.error("Error verifying Clerk token:", error);
-      return null;
-    }
-    
-    return null;
-  },
+// Clerk JWT verification - Clerk is the JWT issuer and verifier
+// Convex will verify Clerk JWTs using the JWKS endpoint from the issuer domain
+
+console.log("auth.config.js: Clerk JWT verification");
+console.log("auth.config.js: CLERK_JWT_ISSUER_DOMAIN =", process.env.CLERK_JWT_ISSUER_DOMAIN);
+
+const domain = process.env.CLERK_JWT_ISSUER_DOMAIN;
+if (!domain) {
+  console.error("auth.config.js: MISSING CLERK_JWT_ISSUER_DOMAIN - auth will fail!");
+}
+
+const clerkProvider = {
+  domain,
+  applicationID: "convex", // Matches your Clerk JWT template 'name': 'convex'
+  // TODO: If needed, change to template ID: 'jtmp_35cHby2MaraTJG2IbsBzf3quUfz' and test
 };
+console.log("auth.config.js: Clerk provider config:", JSON.stringify(clerkProvider));
 
-export const { auth, signIn, signOut, store } = convexAuth({
-  providers: [clerkAuth],
+export default convexAuth({
+  providers: [
+    {
+      domain: process.env.CLERK_JWT_ISSUER_DOMAIN,
+      applicationID: "convex",
+    },
+  ],
 });

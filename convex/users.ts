@@ -111,3 +111,72 @@ export const updateLastActive = mutation({
     return userProfile?._id;
   },
 });
+
+export const syncFromClerk = mutation({
+  args: {
+    clerkUserId: v.string(),
+    email: v.string(),
+    name: v.string(),
+    imageUrl: v.optional(v.string()),
+    orgId: v.optional(v.string()),
+    orgRole: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .first();
+
+    if (existingProfile) {
+      // Update existing profile
+      await ctx.db.patch(existingProfile._id, {
+        email: args.email,
+        name: args.name,
+        lastActiveAt: Date.now(),
+      });
+      return existingProfile._id;
+    } else {
+      // Create new profile if user has an organization
+      if (args.orgId) {
+        const organization = await ctx.db
+          .query("organizations")
+          .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.orgId!))
+          .first();
+
+        if (organization) {
+          const now = Date.now();
+          const userProfileId = await ctx.db.insert("userProfiles", {
+            clerkUserId: args.clerkUserId,
+            clerkOrgId: args.orgId,
+            orgId: organization._id,
+            email: args.email,
+            name: args.name,
+            role: args.orgRole === "admin" ? "admin" : "member",
+            createdAt: now,
+            lastActiveAt: now,
+          });
+          return userProfileId;
+        }
+      }
+    }
+    return null;
+  },
+});
+
+export const deleteFromClerk = mutation({
+  args: {
+    clerkUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.delete(userProfile._id);
+    }
+
+    return userProfile?._id;
+  },
+});

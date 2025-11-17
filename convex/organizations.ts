@@ -92,3 +92,67 @@ export const updateOrganization = mutation({
     return orgId;
   },
 });
+
+export const syncFromClerk = mutation({
+  args: {
+    clerkOrgId: v.string(),
+    name: v.string(),
+    createdBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existingOrg = await ctx.db
+      .query("organizations")
+      .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .first();
+
+    if (existingOrg) {
+      // Update existing organization
+      await ctx.db.patch(existingOrg._id, {
+        name: args.name,
+        updatedAt: Date.now(),
+      });
+      return existingOrg._id;
+    } else {
+      // Create new organization
+      const now = Date.now();
+      const orgId = await ctx.db.insert("organizations", {
+        name: args.name,
+        type: "shipper", // Default type, can be updated later
+        clerkOrgId: args.clerkOrgId,
+        createdBy: args.createdBy || "",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return orgId;
+    }
+  },
+});
+
+export const deleteFromClerk = mutation({
+  args: {
+    clerkOrgId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const organization = await ctx.db
+      .query("organizations")
+      .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .first();
+
+    if (organization) {
+      // Delete all user profiles associated with this organization
+      const userProfiles = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_orgId", (q) => q.eq("orgId", organization._id))
+        .collect();
+
+      for (const profile of userProfiles) {
+        await ctx.db.delete(profile._id);
+      }
+
+      // Delete the organization
+      await ctx.db.delete(organization._id);
+    }
+
+    return organization?._id;
+  },
+});
