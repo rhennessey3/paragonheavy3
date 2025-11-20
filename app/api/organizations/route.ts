@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuth } from "@clerk/nextjs/server";
+import { getAuth, clerkClient } from "@clerk/nextjs/server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,21 +15,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // For now, return a mock organization response
-    // TODO: Implement actual Clerk organization creation when API is available
-    const mockOrganization = {
-      id: `org_${Date.now()}`,
-      name,
-      public_metadata: {
-        type,
-      },
-      private_metadata: {
-        type,
-      },
-      created_at: new Date().toISOString(),
-    };
+    if (!["shipper", "carrier", "escort"].includes(type)) {
+      return NextResponse.json({ error: "Invalid organization type" }, { status: 400 });
+    }
 
-    return NextResponse.json(mockOrganization);
+    const clerk = await clerkClient();
+    const organization = await clerk.organizations.createOrganization({
+      name,
+      createdBy: userId!,
+      publicMetadata: {
+        type,
+      },
+    });
+
+    return NextResponse.json({ id: organization.id });
   } catch (error) {
     console.error("Error creating organization:", error);
     return NextResponse.json(

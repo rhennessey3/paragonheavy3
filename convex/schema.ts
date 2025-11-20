@@ -23,6 +23,7 @@ export default defineSchema({
     role: v.union(v.literal("admin"), v.literal("member"), v.literal("driver")),
     createdAt: v.number(),
     lastActiveAt: v.optional(v.number()),
+    emailVerified: v.optional(v.boolean()),
   })
     .index("by_clerkUserId", ["clerkUserId"])
     .index("by_orgId", ["orgId"])

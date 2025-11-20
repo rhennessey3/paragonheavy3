@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { requireAuthSession } from "./auth";
 
 export const createUserProfile = mutation({
   args: {
@@ -11,6 +12,11 @@ export const createUserProfile = mutation({
     role: v.union(v.literal("admin"), v.literal("member"), v.literal("driver")),
   },
   handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    if (session.sub !== args.clerkUserId) {
+      throw new Error("Unauthorized: clerkUserId does not match session");
+    }
+
     const now = Date.now();
     
     const userProfileId = await ctx.db.insert("userProfiles", {
@@ -30,12 +36,18 @@ export const createUserProfile = mutation({
 
 export const getUserProfile = query({
   args: {
-    clerkUserId: v.string(),
+    clerkUserId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    let userId = args.clerkUserId;
+    if (!userId) {
+      const session = await requireAuthSession(ctx);
+      userId = session.sub;
+    }
+
     const userProfile = await ctx.db
       .query("userProfiles")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", userId))
       .first();
 
     return userProfile;
@@ -79,11 +91,16 @@ export const updateUserProfile = mutation({
     role: v.optional(v.union(v.literal("admin"), v.literal("member"), v.literal("driver"))),
   },
   handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
     const { userProfileId, ...updates } = args;
     
     const userProfile = await ctx.db.get(userProfileId);
     if (!userProfile) {
       throw new Error("User profile not found");
+    }
+
+    if (userProfile.clerkUserId !== session.sub) {
+      throw new Error("Unauthorized: You can only update your own profile");
     }
 
     await ctx.db.patch(userProfileId, updates);
@@ -112,7 +129,7 @@ export const updateLastActive = mutation({
   },
 });
 
-export const syncFromClerk = mutation({
+export const syncFromClerk = internalMutation({
   args: {
     clerkUserId: v.string(),
     email: v.string(),
@@ -120,6 +137,7 @@ export const syncFromClerk = mutation({
     imageUrl: v.optional(v.string()),
     orgId: v.optional(v.string()),
     orgRole: v.optional(v.string()),
+    emailVerified: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const existingProfile = await ctx.db
@@ -133,6 +151,7 @@ export const syncFromClerk = mutation({
         email: args.email,
         name: args.name,
         lastActiveAt: Date.now(),
+        emailVerified: args.emailVerified,
       });
       return existingProfile._id;
     } else {
@@ -154,6 +173,7 @@ export const syncFromClerk = mutation({
             role: args.orgRole === "admin" ? "admin" : "member",
             createdAt: now,
             lastActiveAt: now,
+            emailVerified: args.emailVerified,
           });
           return userProfileId;
         }
@@ -163,7 +183,7 @@ export const syncFromClerk = mutation({
   },
 });
 
-export const deleteFromClerk = mutation({
+export const deleteFromClerk = internalMutation({
   args: {
     clerkUserId: v.string(),
   },

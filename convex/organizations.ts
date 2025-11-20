@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { requireAuthSession } from "./auth";
 
 export const createOrganization = mutation({
   args: {
@@ -9,6 +10,11 @@ export const createOrganization = mutation({
     createdBy: v.string(),
   },
   handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    if (session.sub !== args.createdBy) {
+      throw new Error("Unauthorized: createdBy does not match session");
+    }
+
     const now = Date.now();
     
     const orgId = await ctx.db.insert("organizations", {
@@ -40,19 +46,25 @@ export const getOrganization = query({
 
 export const getUserOrganizations = query({
   args: {
-    userId: v.string(),
+    userId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    let userId = args.userId;
+    if (!userId) {
+      const session = await requireAuthSession(ctx);
+      userId = session.sub;
+    }
+
     // Get organizations where user is the creator
     const createdOrgs = await ctx.db
       .query("organizations")
-      .withIndex("by_creator", (q) => q.eq("createdBy", args.userId))
+      .withIndex("by_creator", (q) => q.eq("createdBy", userId))
       .collect();
 
     // Get user profiles to find organizations where user is a member
     const userProfiles = await ctx.db
       .query("userProfiles")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.userId))
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", userId))
       .collect();
 
     const memberOrgIds = userProfiles.map(profile => profile.orgId);
@@ -62,7 +74,7 @@ export const getUserOrganizations = query({
 
     // Combine and remove duplicates
     const allOrgs = [...createdOrgs, ...memberOrgs.filter(Boolean)];
-    const uniqueOrgs = allOrgs.filter((org, index, self) => 
+    const uniqueOrgs = allOrgs.filter((org, index, self) =>
       index === self.findIndex((o) => o?._id === org?._id)
     );
 
@@ -77,11 +89,31 @@ export const updateOrganization = mutation({
     type: v.optional(v.union(v.literal("shipper"), v.literal("carrier"), v.literal("escort"))),
   },
   handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
     const { orgId, ...updates } = args;
     
     const organization = await ctx.db.get(orgId);
     if (!organization) {
       throw new Error("Organization not found");
+    }
+
+    // Check if user is the creator or an admin member
+    // For now, just check if they are the creator or if they are a member of the org
+    // Ideally we should check for admin role
+    
+    const isCreator = organization.createdBy === session.sub;
+    
+    if (!isCreator) {
+        // Check if they are a member
+        const userProfile = await ctx.db
+            .query("userProfiles")
+            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
+            .filter((q) => q.eq(q.field("orgId"), orgId))
+            .first();
+            
+        if (!userProfile || userProfile.role !== "admin") {
+             throw new Error("Unauthorized: You must be the creator or an admin to update this organization");
+        }
     }
 
     await ctx.db.patch(orgId, {
@@ -93,7 +125,7 @@ export const updateOrganization = mutation({
   },
 });
 
-export const syncFromClerk = mutation({
+export const syncFromClerk = internalMutation({
   args: {
     clerkOrgId: v.string(),
     name: v.string(),
@@ -128,7 +160,7 @@ export const syncFromClerk = mutation({
   },
 });
 
-export const deleteFromClerk = mutation({
+export const deleteFromClerk = internalMutation({
   args: {
     clerkOrgId: v.string(),
   },

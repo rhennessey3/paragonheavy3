@@ -4,7 +4,7 @@
   "description": "A multi-tenant heavy haul logistics platform built with Next.js, Clerk, and Convex.",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "(lsof -ti:3000 | xargs kill) || true && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -39,8 +39,10 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
+    "autoprefixer": "^10.4.22",
     "eslint": "^8.0.0",
     "eslint-config-next": "14.0.0",
+    "tailwindcss": "^3.4.18",
     "typescript": "^5.0.0"
   }
 }

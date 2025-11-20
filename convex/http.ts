@@ -25,6 +25,7 @@ http.route({
           imageUrl: event.data.image_url,
           orgId: event.data.organization_memberships?.[0]?.organization?.id,
           orgRole: event.data.organization_memberships?.[0]?.role,
+          emailVerified: event.data.email_addresses?.[0]?.verification?.status === "verified",
         });
         break;
 
