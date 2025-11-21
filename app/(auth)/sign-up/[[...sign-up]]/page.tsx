@@ -10,7 +10,7 @@ export default function SignUpPage() {
       </div>
       
       <SignUp
-        forceRedirectUrl="/what-type-of-org-are-you"
+        forceRedirectUrl="/sign-up/tasks/create-org-name"
         appearance={{
           elements: {
             formButtonPrimary: "bg-primary hover:bg-primary/90 text-sm normal-case",

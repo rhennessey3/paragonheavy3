@@ -21,11 +21,52 @@ export interface ClerkSessionClaim {
 export async function getAuthSession(
   ctx: QueryCtx | MutationCtx | ActionCtx
 ): Promise<ClerkSessionClaim | null> {
+  console.log("🔍 getAuthSession called");
   const identity = await ctx.auth.getUserIdentity();
+  console.log("🔑 Identity retrieved:", {
+    hasIdentity: !!identity,
+    identityKeys: identity ? Object.keys(identity) : null,
+    subject: identity?.subject,
+    tokenIdentifier: identity?.tokenIdentifier,
+    rawIdentity: identity
+  });
+  
   if (!identity) {
+    console.log("❌ No identity found");
     return null;
   }
-  return identity as unknown as ClerkSessionClaim;
+  
+  // Log the raw identity structure to understand the mapping issue
+  console.log("🔍 Raw identity structure:", JSON.stringify(identity, null, 2));
+  
+  // Map the identity fields to match ClerkSessionClaim interface
+  const session: ClerkSessionClaim = {
+    ...identity,
+    sub: identity.subject, // Map subject to sub for compatibility
+    aud: identity.tokenIdentifier?.split('|')[0] || 'convex',
+    name: identity.name || '',
+    email: identity.email || '',
+    org_id: String(identity.org_id || ''),
+    orgType: String(identity.orgType || ''),
+    org_name: String(identity.org_name || ''),
+    "org.role": String(identity['org.role'] || ''),
+    picture: identity.pictureUrl || '',
+    nickname: identity.name || '',
+    given_name: identity.givenName || '',
+    updated_at: identity.updatedAt || '',
+    email_verified: identity.emailVerified || false,
+    iss: identity.issuer || '',
+    sid: '', // Not available in identity object
+  };
+  
+  console.log("✅ Session created:", {
+    sub: session.sub,
+    email: session.email,
+    name: session.name,
+    sessionSubType: typeof session.sub
+  });
+  
+  return session;
 }
 
 export async function requireAuthSession(

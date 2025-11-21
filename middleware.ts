@@ -1,20 +1,24 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)', '/what-type-of-org-are-you(.*)', '/api/webhooks(.*)']);
+const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)', '/signup/tasks/create-org-name(.*)', '/api/webhooks(.*)']);
 
 export default clerkMiddleware(async (auth, req) => {
   const { userId, orgId } = await auth();
-  console.log(`Middleware processing: ${req.nextUrl.pathname}`);
-  console.log(`Auth state: userId=${userId}, orgId=${orgId}`);
+  console.log(`🔄 Middleware processing: ${req.nextUrl.pathname}`);
+  console.log(`🔐 Auth state: userId=${userId}, orgId=${orgId}`);
   
   // Handle user without organization
   if (userId && !orgId &&
-      !req.nextUrl.pathname.includes('/what-type-of-org-are-you') &&
+      !req.nextUrl.pathname.includes('/sign-up/tasks/create-org-name') &&
+      !req.nextUrl.pathname.includes('/sign-up/tasks/select-org-type') &&
       !req.nextUrl.pathname.includes('/api/organizations') &&
       !req.nextUrl.pathname.includes('/api/switch-organization')
   ) {
-    const chooseOrgUrl = new URL('/what-type-of-org-are-you', req.url);
+    console.log(`⚠️ Redirecting to create-org-name: User has userId but no orgId`);
+    console.log(`📍 Current path: ${req.nextUrl.pathname}`);
+    console.log(`📍 Redirect target: /sign-up/tasks/create-org-name`);
+    const chooseOrgUrl = new URL('/sign-up/tasks/create-org-name', req.url);
     return NextResponse.redirect(chooseOrgUrl);
   }
 

@@ -20,8 +20,10 @@ export default function DashboardPage() {
   const userProfile = useQuery(api.users.getUserProfile, {
     clerkUserId: userId || undefined,
   });
+
   
   const createUserProfile = useMutation(api.users.createUserProfile);
+  const createOrganization = useMutation(api.organizations.createOrganization);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -60,6 +62,59 @@ export default function DashboardPage() {
     
     ensureUserProfile();
   }, [userId, orgId, organization, userProfile, createUserProfile, user]);
+
+  // Recovery mechanism: If user has orgId but no organization in Convex, sync it
+  useEffect(() => {
+    const syncMissingOrganization = async () => {
+      if (userId && orgId && !organization && user?.organizationMemberships && user.organizationMemberships.length > 0) {
+        console.log("🔄 Dashboard: Detected missing organization in Convex, attempting recovery sync", {
+          userId,
+          orgId,
+          clerkOrgs: user.organizationMemberships.map(org => ({
+            id: org.organization.id,
+            name: org.organization.name,
+            role: org.role
+          })),
+          timestamp: new Date().toISOString()
+        });
+
+        try {
+          // Find the matching organization from user's memberships
+          const matchingOrg = user.organizationMemberships.find(
+            membership => membership.organization.id === orgId
+          );
+
+          if (matchingOrg) {
+            console.log("🔧 Dashboard: Creating missing organization in Convex", {
+              name: matchingOrg.organization.name,
+              clerkOrgId: matchingOrg.organization.id,
+              createdBy: userId
+            });
+
+            // Create the organization in Convex
+            const convexOrgId = await createOrganization({
+              name: matchingOrg.organization.name,
+              type: (matchingOrg.organization.publicMetadata as any)?.type || "shipper",
+              clerkOrgId: matchingOrg.organization.id,
+              createdBy: userId,
+            });
+
+            console.log("✅ Dashboard: Organization recovery sync completed", {
+              convexOrgId,
+              timestamp: new Date().toISOString()
+            });
+          }
+        } catch (error) {
+          console.error("❌ Dashboard: Organization recovery sync failed", {
+            error,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    };
+
+    syncMissingOrganization();
+  }, [userId, orgId, organization, user, createOrganization]);
 
   if (!userId || !orgId) {
     return <div>Loading...</div>;

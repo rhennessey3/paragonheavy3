@@ -140,6 +140,15 @@ export const syncFromClerk = internalMutation({
     emailVerified: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    console.log("👤 syncFromClerk called:", {
+      clerkUserId: args.clerkUserId,
+      email: args.email,
+      name: args.name,
+      orgId: args.orgId,
+      orgRole: args.orgRole,
+      emailVerified: args.emailVerified,
+    });
+    
     const existingProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
@@ -147,22 +156,26 @@ export const syncFromClerk = internalMutation({
 
     if (existingProfile) {
       // Update existing profile
+      console.log("📝 Updating existing user profile:", existingProfile._id);
       await ctx.db.patch(existingProfile._id, {
         email: args.email,
         name: args.name,
         lastActiveAt: Date.now(),
         emailVerified: args.emailVerified,
       });
+      console.log("✅ User profile updated successfully");
       return existingProfile._id;
     } else {
       // Create new profile if user has an organization
       if (args.orgId) {
+        console.log("🔍 Looking for organization with clerkOrgId:", args.orgId);
         const organization = await ctx.db
           .query("organizations")
           .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.orgId!))
           .first();
 
         if (organization) {
+          console.log("✅ Found organization:", organization._id, "Creating user profile");
           const now = Date.now();
           const userProfileId = await ctx.db.insert("userProfiles", {
             clerkUserId: args.clerkUserId,
@@ -175,8 +188,13 @@ export const syncFromClerk = internalMutation({
             lastActiveAt: now,
             emailVerified: args.emailVerified,
           });
+          console.log("✅ User profile created successfully:", userProfileId);
           return userProfileId;
+        } else {
+          console.log("❌ Organization not found for clerkOrgId:", args.orgId);
         }
+      } else {
+        console.log("⚠️ No orgId provided for user sync");
       }
       
       // If user doesn't have an organization in Clerk, check if they are a member of any organizations in Convex
@@ -184,6 +202,8 @@ export const syncFromClerk = internalMutation({
       const existingOrgs = await ctx.db
         .query("organizations")
         .collect();
+      
+      console.log("📊 Total organizations in database:", existingOrgs.length);
       
       // For now, we won't auto-create profiles without an organization
       // User should be explicitly added to organizations

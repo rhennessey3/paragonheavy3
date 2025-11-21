@@ -12,8 +12,8 @@ export default async function DashboardLayout({
   console.log(`DashboardLayout: userId=${userId}, orgId=${orgId}`);
 
   if (!userId || !orgId) {
-    console.log("DashboardLayout: Missing userId or orgId, redirecting to /what-type-of-org-are-you");
-    redirect("/what-type-of-org-are-you");
+    console.log("DashboardLayout: Missing userId or orgId, redirecting to /signup/tasks/create-org-name");
+    redirect("/signup/tasks/create-org-name");
   }
 
   return (

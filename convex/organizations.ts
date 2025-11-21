@@ -10,8 +10,35 @@ export const createOrganization = mutation({
     createdBy: v.string(),
   },
   handler: async (ctx, args) => {
+    console.log("🔐 createOrganization called with:", {
+      createdBy: args.createdBy,
+      clerkOrgId: args.clerkOrgId,
+      name: args.name
+    });
+    
     const session = await requireAuthSession(ctx);
+    console.log("🔑 Auth session details:", {
+      sessionSub: session.sub,
+      sessionEmail: session.email,
+      sessionName: session.name
+    });
+    
+    console.log("🔍 Comparison check:", {
+      sessionSub: session.sub,
+      createdBy: args.createdBy,
+      areEqual: session.sub === args.createdBy,
+      types: {
+        sessionSubType: typeof session.sub,
+        createdByIdType: typeof args.createdBy
+      }
+    });
+    
     if (session.sub !== args.createdBy) {
+      console.error("❌ Authorization failed:", {
+        sessionSub: session.sub,
+        createdBy: args.createdBy,
+        areEqual: session.sub === args.createdBy
+      });
       throw new Error("Unauthorized: createdBy does not match session");
     }
 
@@ -123,30 +150,91 @@ export const syncFromClerk = internalMutation({
     createdBy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    console.log("🏢 syncFromClerk called:", {
+      ...args,
+      timestamp: new Date().toISOString()
+    });
+    
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
       .first();
-
+    
+    console.log("🔍 Existing organization check:", {
+      clerkOrgId: args.clerkOrgId,
+      existingOrg: !!existingOrg,
+      existingOrgId: existingOrg?._id,
+      existingOrgName: existingOrg?.name,
+      timestamp: new Date().toISOString()
+    });
+    
     if (existingOrg) {
       // Update existing organization
+      console.log("📝 Updating existing organization:", existingOrg._id);
       await ctx.db.patch(existingOrg._id, {
         name: args.name,
         updatedAt: Date.now(),
       });
+      console.log("✅ Organization updated successfully");
       return existingOrg._id;
     } else {
-      // Create new organization
-      const now = Date.now();
-      const orgId = await ctx.db.insert("organizations", {
-        name: args.name,
-        type: "shipper", // Default type, can be updated later
+      // Enhanced race condition handling
+      console.log("🔍 Checking if organization was recently created by user:", {
         clerkOrgId: args.clerkOrgId,
-        createdBy: args.createdBy || "",
-        createdAt: now,
-        updatedAt: now,
+        createdBy: args.createdBy,
+        hasCreatedBy: !!args.createdBy,
+        timestamp: new Date().toISOString()
       });
-      return orgId;
+      
+      // Check if this organization was created very recently (within last 10 seconds)
+      const recentTimeThreshold = Date.now() - 10000; // 10 seconds ago
+      const recentOrgs = await ctx.db
+        .query("organizations")
+        .withIndex("by_clerkOrgId", (q) =>
+          q.eq("clerkOrgId", args.clerkOrgId)
+        )
+        .collect();
+      
+      const veryRecentOrg = recentOrgs.find(org =>
+        org.clerkOrgId === args.clerkOrgId &&
+        org.createdAt > recentTimeThreshold
+      );
+      
+      console.log("🕐 Race condition check:", {
+        clerkOrgId: args.clerkOrgId,
+        recentOrgsCount: recentOrgs.length,
+        veryRecentOrg: !!veryRecentOrg,
+        recentTimeThreshold: new Date(recentTimeThreshold).toISOString(),
+        timestamp: new Date().toISOString()
+      });
+      
+      // If createdBy is not provided, this is likely a webhook sync for an org
+      // created by another process (like manual admin creation)
+      if (!args.createdBy && !veryRecentOrg) {
+        console.log("➕ Creating new organization from webhook (no createdBy, no recent race)", {
+          timestamp: new Date().toISOString()
+        });
+        const now = Date.now();
+        const orgId = await ctx.db.insert("organizations", {
+          name: args.name,
+          type: "shipper", // Default type, can be updated later
+          clerkOrgId: args.clerkOrgId,
+          createdBy: "",
+          createdAt: now,
+          updatedAt: now,
+        });
+        console.log("✅ Organization created successfully:", {
+          orgId,
+          timestamp: new Date().toISOString()
+        });
+        return orgId;
+      } else {
+        console.log("⏭️ Skipping organization creation - webhook race condition or user flow", {
+          reason: args.createdBy ? "has createdBy (user flow)" : "very recent org (race condition)",
+          timestamp: new Date().toISOString()
+        });
+        return null;
+      }
     }
   },
 });

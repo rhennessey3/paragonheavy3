@@ -8,7 +8,9 @@
  * @module
  */
 
+import type * as addRealData from "../addRealData.js";
 import type * as auth from "../auth.js";
+import type * as clearConvexData from "../clearConvexData.js";
 import type * as debug from "../debug.js";
 import type * as http from "../http.js";
 import type * as loads from "../loads.js";
@@ -22,7 +24,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  addRealData: typeof addRealData;
   auth: typeof auth;
+  clearConvexData: typeof clearConvexData;
   debug: typeof debug;
   http: typeof http;
   loads: typeof loads;

@@ -2,7 +2,7 @@
 
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 
 // Add diagnostic logging
@@ -11,14 +11,32 @@ console.log("ConvexClientProvider: Initializing Convex client");
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
+// Add connection state monitoring
+let connectionAttempts = 0;
+const maxConnectionAttempts = 5;
+
+// Monitor connection state through the client's internal state
+const originalLog = console.log;
+console.log = (...args) => {
+  originalLog(...args);
+  if (args[0] && typeof args[0] === 'string' && args[0].includes('WebSocket')) {
+    connectionAttempts++;
+    if (connectionAttempts > maxConnectionAttempts) {
+      console.error(`🚨 Too many WebSocket connection attempts (${connectionAttempts}). Possible configuration issue.`);
+    }
+  }
+};
+
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
-  // Add diagnostic logging for auth state
   const auth = useAuth();
-  console.log("ConvexClientProvider: Auth state =", {
-    isLoaded: auth.isLoaded,
-    isSignedIn: auth.isSignedIn,
-    userId: auth.userId
-  });
+
+  useEffect(() => {
+    console.log("🔐 Auth state changed:", {
+      isLoaded: auth.isLoaded,
+      isSignedIn: auth.isSignedIn,
+      userId: auth.userId
+    });
+  }, [auth.isLoaded, auth.isSignedIn, auth.userId]);
 
   return (
     <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
