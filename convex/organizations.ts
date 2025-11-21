@@ -97,23 +97,14 @@ export const updateOrganization = mutation({
       throw new Error("Organization not found");
     }
 
-    // Check if user is the creator or an admin member
-    // For now, just check if they are the creator or if they are a member of the org
-    // Ideally we should check for admin role
+    // Phase 2: Only check if user is the creator
+    // Role-based access control will be implemented in Phase 3
+    // For now, roles exist purely as data without affecting access control
     
     const isCreator = organization.createdBy === session.sub;
     
     if (!isCreator) {
-        // Check if they are a member
-        const userProfile = await ctx.db
-            .query("userProfiles")
-            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
-            .filter((q) => q.eq(q.field("orgId"), orgId))
-            .first();
-            
-        if (!userProfile || userProfile.role !== "admin") {
-             throw new Error("Unauthorized: You must be the creator or an admin to update this organization");
-        }
+        throw new Error("Unauthorized: Only the organization creator can update organization details in Phase 2");
     }
 
     await ctx.db.patch(orgId, {

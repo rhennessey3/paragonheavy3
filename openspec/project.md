@@ -71,3 +71,24 @@ Paragon Heavy is a multi-tenant logistics platform designed to facilitate secure
 - **Convex:** Backend infrastructure and database.
 - **Vercel:** Hosting and deployment (planned).
 - **DET STATE Framework:** Six-phase deterministic progression model for multi-tenant implementation.
+
+## Configuration and Environment
+
+### Environment Management
+- **Environment Variables:** Structured approach using `NEXT_PUBLIC_*` for client-side and server-side variables
+- **URL Configuration:** Centralized environment-specific URL management for all services
+- **Security:** Proper secret management with environment isolation
+- **Documentation:** Complete environment setup guide in `docs/ENVIRONMENT_SETUP.md`
+
+### Service Relationships
+- **Frontend ↔ Clerk:** Authentication and session management using JWT
+- **Frontend ↔ Convex:** Data storage and real-time updates via API
+- **Clerk ↔ Convex:** User synchronization via webhooks and JWT verification
+
+### Configuration Files
+- **Environment Template:** `.env.example` with all required variables
+- **Convex Auth:** `convex/auth.config.js` for JWT verification
+- **Next.js Config:** `next.config.js` for image domains and middleware
+- **Environment Spec:** `openspec/specs/environment-configuration/spec.md` for detailed requirements
+
+For complete environment setup instructions, see [`docs/ENVIRONMENT_SETUP.md`](../docs/ENVIRONMENT_SETUP.md) and [`openspec/specs/environment-configuration/spec.md`](specs/environment-configuration/spec.md).

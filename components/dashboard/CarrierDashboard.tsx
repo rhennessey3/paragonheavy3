@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadCreationModal } from "./LoadCreationModal";
 
 export function CarrierDashboard() {
+  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -34,10 +37,24 @@ export function CarrierDashboard() {
       </div>
       <div className="p-4 border rounded-lg bg-muted/10">
         <h3 className="font-semibold mb-2">Carrier Actions</h3>
-        <button className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90">
-          Find Loads
-        </button>
+        <div className="space-y-2">
+          <button
+            className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90 w-full"
+            onClick={() => setIsLoadModalOpen(true)}
+          >
+            Create New Load
+          </button>
+          <button className="bg-secondary text-secondary-foreground px-4 py-2 rounded hover:bg-secondary/90 w-full">
+            Find Loads
+          </button>
+        </div>
       </div>
+      
+      <LoadCreationModal
+        isOpen={isLoadModalOpen}
+        onClose={() => setIsLoadModalOpen(false)}
+        orgType="carrier"
+      />
     </div>
   );
 }

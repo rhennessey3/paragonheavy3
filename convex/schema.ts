@@ -1,6 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+// Debug: Log schema definition
+console.log("Defining Convex schema with tables: organizations, userProfiles, loads");
+
 export default defineSchema({
   organizations: defineTable({
     name: v.string(),
@@ -20,7 +23,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     email: v.string(),
     name: v.string(),
-    role: v.union(v.literal("admin"), v.literal("member"), v.literal("driver")),
+    role: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member")),
     createdAt: v.number(),
     lastActiveAt: v.optional(v.number()),
     emailVerified: v.optional(v.boolean()),

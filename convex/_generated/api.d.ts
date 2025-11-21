@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as debug from "../debug.js";
 import type * as http from "../http.js";
 import type * as loads from "../loads.js";
 import type * as organizations from "../organizations.js";
@@ -22,6 +23,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  debug: typeof debug;
   http: typeof http;
   loads: typeof loads;
   organizations: typeof organizations;

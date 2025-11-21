@@ -1,7 +1,7 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { ShipperDashboard } from "@/components/dashboard/ShipperDashboard";
 import { CarrierDashboard } from "@/components/dashboard/CarrierDashboard";
@@ -9,13 +9,19 @@ import { EscortDashboard } from "@/components/dashboard/EscortDashboard";
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-  console.log("DashboardPage rendering");
   const { userId, orgId, getToken, sessionClaims } = useAuth();
+  const { user } = useUser();
   const [convexTokenClaims, setConvexTokenClaims] = useState<any>(null);
   
   const organization = useQuery(api.organizations.getOrganization, {
     clerkOrgId: orgId || "",
   });
+  
+  const userProfile = useQuery(api.users.getUserProfile, {
+    clerkUserId: userId || undefined,
+  });
+  
+  const createUserProfile = useMutation(api.users.createUserProfile);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -31,6 +37,29 @@ export default function DashboardPage() {
     };
     fetchToken();
   }, [getToken]);
+
+  // Create user profile if it doesn't exist
+  useEffect(() => {
+    const ensureUserProfile = async () => {
+      if (userId && orgId && organization && !userProfile) {
+        try {
+          await createUserProfile({
+            clerkUserId: userId,
+            clerkOrgId: orgId,
+            orgId: organization._id,
+            email: user?.primaryEmailAddress?.emailAddress || "",
+            name: user?.fullName || user?.username || "",
+            role: "operator", // Default role for existing users
+          });
+          console.log("Created user profile for existing user");
+        } catch (error) {
+          console.error("Failed to create user profile:", error);
+        }
+      }
+    };
+    
+    ensureUserProfile();
+  }, [userId, orgId, organization, userProfile, createUserProfile, user]);
 
   if (!userId || !orgId) {
     return <div>Loading...</div>;

@@ -9,7 +9,7 @@ export const createUserProfile = mutation({
     orgId: v.id("organizations"),
     email: v.string(),
     name: v.string(),
-    role: v.union(v.literal("admin"), v.literal("member"), v.literal("driver")),
+    role: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member")),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -88,7 +88,7 @@ export const updateUserProfile = mutation({
   args: {
     userProfileId: v.id("userProfiles"),
     name: v.optional(v.string()),
-    role: v.optional(v.union(v.literal("admin"), v.literal("member"), v.literal("driver"))),
+    role: v.optional(v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member"))),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -170,7 +170,7 @@ export const syncFromClerk = internalMutation({
             orgId: organization._id,
             email: args.email,
             name: args.name,
-            role: args.orgRole === "admin" ? "admin" : "member",
+            role: args.orgRole === "admin" ? "admin" : args.orgRole === "member" ? "member" : "operator",
             createdAt: now,
             lastActiveAt: now,
             emailVerified: args.emailVerified,
@@ -178,6 +178,15 @@ export const syncFromClerk = internalMutation({
           return userProfileId;
         }
       }
+      
+      // If user doesn't have an organization in Clerk, check if they are a member of any organizations in Convex
+      // This handles cases where user was added to an organization directly in Convex
+      const existingOrgs = await ctx.db
+        .query("organizations")
+        .collect();
+      
+      // For now, we won't auto-create profiles without an organization
+      // User should be explicitly added to organizations
     }
     return null;
   },
@@ -198,5 +207,59 @@ export const deleteFromClerk = internalMutation({
     }
 
     return userProfile?._id;
+  },
+});
+
+export const updateMemberRole = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.string(),
+    newRole: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member")),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    
+    // Get the user profile to update
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.userId))
+      .filter((q) => q.eq(q.field("orgId"), args.orgId))
+      .first();
+      
+    if (!userProfile) {
+      throw new Error("User profile not found in this organization");
+    }
+    
+    // Check if the current user is an admin of this organization
+    const currentUserProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
+      .filter((q) => q.eq(q.field("orgId"), args.orgId))
+      .first();
+      
+    if (!currentUserProfile || currentUserProfile.role !== "admin") {
+      throw new Error("Unauthorized: Only admins can update member roles");
+    }
+    
+    // Update the role
+    await ctx.db.patch(userProfile._id, {
+      role: args.newRole,
+    });
+    
+    return userProfile._id;
+  },
+});
+
+export const getOrganizationMembers = query({
+  args: {
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    const members = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .collect();
+      
+    return members;
   },
 });

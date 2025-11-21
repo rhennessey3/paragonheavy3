@@ -9,7 +9,7 @@ import { useAuth } from "@clerk/nextjs";
 console.log("ConvexClientProvider: NEXT_PUBLIC_CONVEX_URL =", process.env.NEXT_PUBLIC_CONVEX_URL);
 console.log("ConvexClientProvider: Initializing Convex client");
 
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL || "https://disciplined-moose-799.convex.cloud");
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   // Add diagnostic logging for auth state

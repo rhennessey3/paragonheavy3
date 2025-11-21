@@ -29,6 +29,7 @@ export default function WhatTypeOfOrgAreYouPage() {
   const { toast } = useToast();
   
   const createOrganization = useMutation(api.organizations.createOrganization);
+  const createUserProfile = useMutation(api.users.createUserProfile);
 
   const form = useForm<CreateOrgValues>({
     resolver: zodResolver(createOrgSchema),
@@ -65,11 +66,21 @@ export default function WhatTypeOfOrgAreYouPage() {
       const clerkOrg = await response.json();
       
       // Then create in Convex
-      await createOrganization({
+      const convexOrgId = await createOrganization({
         name: orgName,
         type: data.type,
         clerkOrgId: clerkOrg.id,
         createdBy: user.id,
+      });
+      
+      // Create user profile for the organization creator
+      await createUserProfile({
+        clerkUserId: user.id,
+        clerkOrgId: clerkOrg.id,
+        orgId: convexOrgId,
+        email: user.primaryEmailAddress?.emailAddress || "",
+        name: user.fullName || user.username || "",
+        role: "admin", // Organization creator is admin by default
       });
       
       // Update user metadata
