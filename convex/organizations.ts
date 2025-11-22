@@ -334,3 +334,26 @@ export const deleteFromClerk = internalMutation({
     return organization?._id;
   },
 });
+
+export const createInternalOrganization = internalMutation({
+  args: {
+    clerkOrgId: v.string(),
+    name: v.string(),
+    type: v.string(),
+    createdByClerkUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    const orgId = await ctx.db.insert("organizations", {
+      clerkOrgId: args.clerkOrgId,
+      name: args.name,
+      type: args.type as "shipper" | "carrier" | "escort",
+      createdBy: args.createdByClerkUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return orgId;
+  },
+});

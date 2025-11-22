@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useUser, useOrganizationList } from "@clerk/nextjs";
-import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,10 +27,6 @@ export default function SelectOrgTypePage() {
   const [isCreating, setIsCreating] = useState(false);
   const { toast } = useToast();
   
-  const createOrganization = useMutation(api.organizations.createOrganization);
-  const createUserProfile = useMutation(api.users.createUserProfile);
-  const updateOrganizationType = useMutation(api.organizations.updateOrganizationType);
-  const markOnboardingCompleted = useMutation(api.users.markOnboardingCompleted);
 
   // Get organization name from URL parameter
   const orgName = searchParams.get('name') || '';
@@ -137,61 +132,49 @@ export default function SelectOrgTypePage() {
                   setIsCreating(true);
                   
                   try {
-                    // Update organization type in Convex
-                    console.log("🔧 SelectOrgType: Updating organization type in Convex...", {
-                      type: data.type,
+                    
+                    // Find the user's organization
+                    
+                    
+                    // Call onboarding-complete API with orgName and orgType
+                    console.log("🎯 SelectOrgType: Calling onboarding-complete API...", {
+                      orgName,
+                      orgType: data.type,
                       timestamp: new Date().toISOString()
                     });
                     
-                    // Find the user's organization
-                    const userOrgs = user.organizationMemberships || [];
-                    if (userOrgs.length === 0) {
-                      throw new Error("No organization found for user");
-                    }
-                    
-                    const userOrg = userOrgs[0].organization;
-                    
-                    await updateOrganizationType({
-                      clerkOrgId: userOrg.id,
-                      type: data.type,
-                    });
-                    
-                    console.log("✅ SelectOrgType: Organization type updated");
-                    
-                    // Mark onboarding complete
-                    console.log("🎯 SelectOrgType: Marking onboarding completed...");
-                    await markOnboardingCompleted({
-                      clerkUserId: user.id,
-                    });
-                    console.log("✅ SelectOrgType: Onboarding marked completed");
-                    
-                    // Set onboarding completion cookie
-                    console.log("🍪 SelectOrgType: Setting onboarding completion cookie...");
-                    const cookieResponse = await fetch('/api/onboarding-complete', {
+                    const response = await fetch('/api/onboarding-complete', {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
                       },
+                      body: JSON.stringify({
+                        orgName,
+                        orgType: data.type,
+                      }),
                     });
                     
-                    if (!cookieResponse.ok) {
-                      console.error("❌ SelectOrgType: Failed to set onboarding cookie", {
-                        status: cookieResponse.status,
-                        statusText: cookieResponse.statusText
+                    if (!response.ok) {
+                      console.error("❌ SelectOrgType: Failed to complete onboarding", {
+                        status: response.status,
+                        statusText: response.statusText
                       });
-                      throw new Error("Failed to set onboarding completion cookie");
+                      throw new Error("Failed to complete onboarding");
                     }
                     
-                    console.log("✅ SelectOrgType: Onboarding completion cookie set");
+                    // The API will handle redirect, but if it doesn't, we'll handle it here
+                    if (response.redirected) {
+                      console.log("✅ SelectOrgType: API redirected successfully");
+                      window.location.href = response.url;
+                      return;
+                    }
                     
-                    toast({
-                      title: "Setup Complete",
-                      description: "Your organization has been configured successfully!",
-                    });
+                    // If no redirect from API, manually redirect to dashboard
+                    console.log("✅ SelectOrgType: Onboarding completed successfully, redirecting to dashboard");
+                    window.location.href = '/dashboard';
+                    return;
                     
-                    // Redirect to dashboard
-                    console.log("🏠 SelectOrgType: Redirecting to dashboard...");
-                    router.push('/dashboard');
+                    
                     
                   } catch (error) {
                     console.error("❌ SelectOrgType: Organization type update failed", error);

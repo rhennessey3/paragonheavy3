@@ -287,9 +287,11 @@ export const getOrganizationMembers = query({
   },
 });
 
+
 export const markOnboardingCompleted = mutation({
   args: {
     clerkUserId: v.string(),
+    orgId: v.optional(v.id("organizations")), // optional but recommended
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -310,6 +312,7 @@ export const markOnboardingCompleted = mutation({
 
     await ctx.db.patch(userProfile._id, {
       onboardingCompleted: true,
+      orgId: args.orgId, // if you want to bind the user to that org
       lastActiveAt: Date.now(),
     });
 
