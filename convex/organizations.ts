@@ -239,6 +239,73 @@ export const syncFromClerk = internalMutation({
   },
 });
 
+export const updateOrganizationType = mutation({
+  args: {
+    clerkOrgId: v.string(),
+    type: v.union(v.literal("shipper"), v.literal("carrier"), v.literal("escort")),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    
+    const organization = await ctx.db
+      .query("organizations")
+      .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .first();
+
+    if (!organization) {
+      throw new Error("Organization not found");
+    }
+
+    // Verify user is member of this organization
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
+      .filter((q) => q.eq(q.field("clerkOrgId"), args.clerkOrgId))
+      .first();
+
+    if (!userProfile) {
+      throw new Error("Unauthorized: User is not a member of this organization");
+    }
+
+    await ctx.db.patch(organization._id, {
+      type: args.type,
+      updatedAt: Date.now(),
+    });
+
+    return organization._id;
+  },
+});
+
+export const markOnboardingComplete = mutation({
+  args: {
+    clerkUserId: v.string(),
+    clerkOrgId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    
+    if (session.sub !== args.clerkUserId) {
+      throw new Error("Unauthorized: clerkUserId does not match session");
+    }
+
+    // Update user profile to mark onboarding complete
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .filter((q) => q.eq(q.field("clerkOrgId"), args.clerkOrgId))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.patch(userProfile._id, {
+        onboardingCompleted: true,
+        lastActiveAt: Date.now(),
+      });
+    }
+
+    return true;
+  },
+});
+
 export const deleteFromClerk = internalMutation({
   args: {
     clerkOrgId: v.string(),

@@ -116,8 +116,36 @@ export default function DashboardPage() {
     syncMissingOrganization();
   }, [userId, orgId, organization, user, createOrganization]);
 
-  if (!userId || !orgId) {
-    return <div>Loading...</div>;
+  if (!userId) {
+    console.log("❌ DashboardPage: Missing userId, showing loading state");
+    return <div>Loading authentication...</div>;
+  }
+  
+  console.log("✅ DashboardPage: userId present, proceeding (orgId optional)");
+
+  // Handle case when orgId is missing - show onboarding prompt
+  if (!orgId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Welcome to Paragon Heavy</h1>
+          <p className="text-muted-foreground">Let's get your organization set up</p>
+        </div>
+        
+        <div className="p-6 border rounded-lg bg-blue-50 border-blue-200">
+          <h2 className="text-lg font-semibold text-blue-900 mb-2">Complete Your Organization Setup</h2>
+          <p className="text-blue-700 mb-4">
+            You need to create an organization to access the full dashboard features.
+          </p>
+          <a
+            href="/sign-up/tasks/create-org-name"
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Create Organization
+          </a>
+        </div>
+      </div>
+    );
   }
 
   if (organization === undefined) {

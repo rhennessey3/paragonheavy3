@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useState, useEffect, useRef } from "react";
+import { useUser, useOrganizationList } from "@clerk/nextjs";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -10,6 +12,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/use-toast";
 
 const createOrgNameSchema = z.object({
   name: z.string().min(1, "Organization name is required").max(100, "Organization name must be less than 100 characters"),
@@ -19,19 +22,13 @@ type CreateOrgNameValues = z.infer<typeof createOrgNameSchema>;
 
 export default function CreateOrgNamePage() {
   const { user, isLoaded: isUserLoaded } = useUser();
+  const { setActive } = useOrganizationList();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Add logging for user state
-  console.log("👤 CreateOrgName: User state", {
-    isUserLoaded,
-    user: user ? {
-      id: user.id,
-      email: user.primaryEmailAddress?.emailAddress,
-      fullName: user.fullName
-    } : null,
-    timestamp: new Date().toISOString()
-  });
+  const { toast } = useToast();
+  
+  const createOrganization = useMutation(api.organizations.createOrganization);
+  const createUserProfile = useMutation(api.users.createUserProfile);
 
   const form = useForm<CreateOrgNameValues>({
     resolver: zodResolver(createOrgNameSchema),
@@ -40,13 +37,15 @@ export default function CreateOrgNamePage() {
     },
   });
 
-  // Add form state logging
-  console.log("📝 CreateOrgName: Form state", {
-    formState: form.formState,
-    defaultValues: form.formState.defaultValues,
-    errors: form.formState.errors,
-    timestamp: new Date().toISOString()
-  });
+  // Simplified logging - only log when form state actually changes
+  useEffect(() => {
+    if (form.formState.isSubmitted) {
+      console.log("📝 CreateOrgName: Form submitted", {
+        values: form.getValues(),
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [form.formState.isSubmitted]);
 
   const handleSubmit = async (data: CreateOrgNameValues) => {
     console.log("🚀 CreateOrgName: Form submission started", {
@@ -59,13 +58,18 @@ export default function CreateOrgNamePage() {
       timestamp: new Date().toISOString()
     });
     
+    if (!user) {
+      console.error("❌ CreateOrgName: No user found");
+      return;
+    }
+    
     setIsSubmitting(true);
     console.log("🔄 CreateOrgName: isSubmitting set to true");
     
     try {
-      // Check if user already has organizations before redirecting
-      const existingOrgs = user?.organizationMemberships || [];
-      console.log("🔍 CreateOrgName: Checking existing organizations before redirect", {
+      // Check if user already has organizations
+      const existingOrgs = user.organizationMemberships || [];
+      console.log("🔍 CreateOrgName: Checking existing organizations", {
         existingOrgsCount: existingOrgs.length,
         existingOrgs: existingOrgs.map(org => ({
           id: org.organization.id,
@@ -75,31 +79,60 @@ export default function CreateOrgNamePage() {
         timestamp: new Date().toISOString()
       });
       
-      // IMMEDIATELY redirect to organization type selection with name as URL parameter
-      // Don't wait for any async operations or Clerk responses
-      const targetUrl = `/sign-up/tasks/select-org-type?name=${encodeURIComponent(data.name)}`;
-      console.log("🔄 CreateOrgName: IMMEDIATE navigation to select-org-type", {
-        url: targetUrl,
-        isSubmittingBeforeNav: isSubmitting,
-        userHasExistingOrgs: existingOrgs.length > 0
+      // Allow users to proceed even if they have existing organizations
+      // This prevents redirect loops and allows for testing/onboarding flexibility
+      if (existingOrgs.length > 0) {
+        console.log("ℹ️ CreateOrgName: User already has organizations, but allowing to proceed for onboarding flexibility");
+        toast({
+          title: "Existing Organizations Found",
+          description: "You have existing organizations, but we'll proceed with onboarding.",
+          variant: "default",
+        });
+      }
+      
+      // IMPORTANT: Do NOT create organization here - just pass name to next step
+      // Organization will be created in select-org-type with both name and type
+      console.log("📝 CreateOrgName: About to show toast");
+      toast({
+        title: "Organization Name Set",
+        description: "Proceeding to select organization type.",
       });
       
-      // Use window.location for immediate navigation to bypass any Clerk redirects
-      console.log("🌐 CreateOrgName: About to call window.location.href");
-      window.location.href = targetUrl;
+      // Redirect to select-org-type with organization name as parameter
+      const targetUrl = `/sign-up/tasks/select-org-type?name=${encodeURIComponent(data.name)}`;
+      console.log("🔄 CreateOrgName: Navigation to select-org-type", {
+        url: targetUrl,
+        orgName: data.name,
+        note: "Passing name to next step where organization will be created with type",
+        encodedName: encodeURIComponent(data.name),
+        decodedName: decodeURIComponent(encodeURIComponent(data.name)),
+        timestamp: new Date().toISOString()
+      });
       
-      console.log("✅ CreateOrgName: Navigation initiated successfully");
-      return; // Exit immediately to prevent any further processing
+      console.log("🔄 CreateOrgName: About to call router.push");
+      const pushResult = await router.push(targetUrl);
+      console.log("🔄 CreateOrgName: router.push completed", {
+        result: pushResult,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Add a small delay to see if navigation happens
+      setTimeout(() => {
+        console.log("⏰ CreateOrgName: 500ms after router.push", {
+          currentUrl: window.location.href,
+          timestamp: new Date().toISOString()
+        });
+      }, 500);
+      
+      console.log("✅ CreateOrgName: Navigation completed successfully");
+      return;
     } catch (error) {
-      console.error("❌ CreateOrgName: Navigation failed", error);
-      console.log("🔄 CreateOrgName: Attempting router.push fallback");
-      // Fallback to router.push if window.location fails
-      try {
-        await router.push(`/sign-up/tasks/select-org-type?name=${encodeURIComponent(data.name)}`);
-        console.log("✅ CreateOrgName: Router fallback succeeded");
-      } catch (routerError) {
-        console.error("❌ CreateOrgName: Router fallback also failed", routerError);
-      }
+      console.error("❌ CreateOrgName: Organization creation failed", error);
+      toast({
+        title: "Error",
+        description: "Failed to create organization. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       console.log("🔄 CreateOrgName: Finally block - setting isSubmitting to false");
       setIsSubmitting(false);
@@ -114,6 +147,18 @@ export default function CreateOrgNamePage() {
   if (!user) {
     console.log("❌ CreateOrgName: No user found, this should not happen after sign-up");
     return <div>Error: No user found. Please try signing up again.</div>;
+  }
+
+  // Allow users to proceed even if they have existing organizations
+  // This prevents redirect loops and allows for testing/onboarding flexibility
+  const existingOrgs = user.organizationMemberships || [];
+  
+  // Simple check - no toast to prevent re-renders
+  if (existingOrgs.length > 0) {
+    console.log("ℹ️ CreateOrgName: User already has organizations, but allowing to proceed", {
+      existingOrgsCount: existingOrgs.length,
+      timestamp: new Date().toISOString()
+    });
   }
 
   return (
@@ -161,7 +206,7 @@ export default function CreateOrgNamePage() {
                 />
 
                 <Button type="submit" disabled={isSubmitting} className="w-full">
-                  {isSubmitting ? "Continuing..." : "Continue"}
+                  {isSubmitting ? "Creating Organization..." : "Create Organization"}
                 </Button>
               </form>
             </Form>

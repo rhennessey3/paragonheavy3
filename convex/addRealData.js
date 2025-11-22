@@ -45,8 +45,9 @@ const addRealData = internalMutation({
       createdAt: now,
       lastActiveAt: now,
       emailVerified: true,
+      onboardingCompleted: false,
     });
-    console.log("✅ User profile created:", userProfileId);
+    console.log("✅ User profile created with onboardingCompleted: false:", userProfileId);
 
     console.log("🎉 Real data added successfully!");
     console.log("Now refresh your dashboard - it should work!");

@@ -9,12 +9,15 @@ export default async function DashboardLayout({
   children: ReactNode;
 }) {
   const { userId, orgId } = await auth();
-  console.log(`DashboardLayout: userId=${userId}, orgId=${orgId}`);
-
-  if (!userId || !orgId) {
-    console.log("DashboardLayout: Missing userId or orgId, redirecting to /signup/tasks/create-org-name");
-    redirect("/signup/tasks/create-org-name");
+  console.log(`🔍 DashboardLayout: userId=${userId}, orgId=${orgId}`);
+  
+  if (!userId) {
+    console.log("❌ DashboardLayout: Missing userId, redirecting to /sign-in");
+    redirect("/sign-in");
   }
+  
+  // No orgId redirect - dashboard components will handle missing orgId gracefully
+  console.log("✅ DashboardLayout: userId present, proceeding (orgId optional)");
 
   return (
     <div className="min-h-screen bg-background">

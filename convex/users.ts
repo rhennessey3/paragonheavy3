@@ -28,8 +28,10 @@ export const createUserProfile = mutation({
       role: args.role,
       createdAt: now,
       lastActiveAt: now,
+      onboardingCompleted: false,
     });
 
+    console.log("✅ User profile created with onboardingCompleted: false for clerkUserId:", args.clerkUserId);
     return userProfileId;
   },
 });
@@ -187,8 +189,9 @@ export const syncFromClerk = internalMutation({
             createdAt: now,
             lastActiveAt: now,
             emailVerified: args.emailVerified,
+            onboardingCompleted: false,
           });
-          console.log("✅ User profile created successfully:", userProfileId);
+          console.log("✅ User profile created with onboardingCompleted: false for clerkUserId:", args.clerkUserId);
           return userProfileId;
         } else {
           console.log("❌ Organization not found for clerkOrgId:", args.orgId);
@@ -281,5 +284,35 @@ export const getOrganizationMembers = query({
       .collect();
       
     return members;
+  },
+});
+
+export const markOnboardingCompleted = mutation({
+  args: {
+    clerkUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    
+    if (session.sub !== args.clerkUserId) {
+      throw new Error("Unauthorized: clerkUserId does not match session");
+    }
+
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .unique();
+
+    if (!userProfile) {
+      console.log("❌ markOnboardingCompleted: No user profile found for clerkUserId:", args.clerkUserId);
+      return;
+    }
+
+    await ctx.db.patch(userProfile._id, {
+      onboardingCompleted: true,
+      lastActiveAt: Date.now(),
+    });
+
+    console.log("✅ markOnboardingCompleted: Onboarding marked as complete for clerkUserId:", args.clerkUserId);
   },
 });

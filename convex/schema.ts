@@ -27,6 +27,7 @@ export default defineSchema({
     createdAt: v.number(),
     lastActiveAt: v.optional(v.number()),
     emailVerified: v.optional(v.boolean()),
+    onboardingCompleted: v.boolean(),
   })
     .index("by_clerkUserId", ["clerkUserId"])
     .index("by_orgId", ["orgId"])
