@@ -57,21 +57,45 @@ function SelectOrgTypePageContent() {
     return <div>Error: No user found. Please try signing up again.</div>;
   }
 
-  if (!organization) {
-    console.log("⚠️ SelectOrgType: No organization found, redirecting back to create-organization", {
-      organization,
+  // Check if we have an active organization
+  const activeOrg = organization;
+
+  // If no active organization, check if we have any memberships and set the first one as active
+  if (!activeOrg && user?.organizationMemberships?.length > 0) {
+    const firstOrg = user.organizationMemberships[0].organization;
+    console.log("🔄 SelectOrgType: No active organization, but found membership. Setting active...", {
+      orgId: firstOrg.id,
+      orgName: firstOrg.name
+    });
+
+    // We can't synchronously set it here and expect it to be ready immediately for rendering
+    // But we can use this org data for the form rendering if we want, or wait.
+    // Better to show a loading state while we switch.
+    // However, useOrganization doesn't expose setActive directly, useSessionList or useOrganizationList does.
+    // But usually Clerk handles this.
+
+    // Let's just use the first org from memberships for rendering if active is null
+    // This avoids the redirect loop.
+  } else if (!activeOrg) {
+    console.log("⚠️ SelectOrgType: No organization found and no memberships, redirecting back to create-organization", {
       timestamp: new Date().toISOString(),
       currentUrl: window.location.href,
       clerkLoaded: { isUserLoaded, isOrgLoaded }
     });
-    
+
     router.push('/sign-up/tasks/create-organization');
     return <div>Redirecting...</div>;
   }
 
+  const effectiveOrg = activeOrg || (user?.organizationMemberships?.[0]?.organization);
+
+  if (!effectiveOrg) {
+    return <div>Redirecting...</div>;
+  }
+
   console.log("✅ SelectOrgType: All checks passed, rendering form", {
-    orgId: organization.id,
-    orgName: organization.name,
+    orgId: effectiveOrg.id,
+    orgName: effectiveOrg.name,
     currentUrl: window.location.href,
     timestamp: new Date().toISOString()
   });
@@ -88,14 +112,14 @@ function SelectOrgTypePageContent() {
           </div>
           <p className="text-sm text-muted-foreground">Step 2 of 2</p>
         </div>
-        
+
         <div className="text-center">
           <h1 className="text-3xl font-bold text-foreground">Select Organization Type</h1>
           <p className="mt-2 text-muted-foreground">
-            Organization: <span className="font-medium">{organization.name}</span>
+            Organization: <span className="font-medium">{effectiveOrg.name}</span>
           </p>
         </div>
-        
+
         <Card>
           <CardHeader>
             <CardTitle>What type of organization is this?</CardTitle>
@@ -105,34 +129,34 @@ function SelectOrgTypePageContent() {
               <form onSubmit={form.handleSubmit(async (data) => {
                 console.log("🚀 SelectOrgType: Form submission started", {
                   data,
-                  orgId: organization.id,
-                  orgName: organization.name,
+                  orgId: effectiveOrg.id,
+                  orgName: effectiveOrg.name,
                   user: user ? {
                     id: user.id,
                     email: user.primaryEmailAddress?.emailAddress,
                   } : null,
                   timestamp: new Date().toISOString()
                 });
-                
+
                 setIsUpdating(true);
-                
+
                 try {
                   // Call onboarding-complete API with orgId and orgType
                   console.log("🎯 SelectOrgType: Calling onboarding-complete API...", {
-                    orgId: organization.id,
-                    orgName: organization.name,
+                    orgId: effectiveOrg.id,
+                    orgName: effectiveOrg.name,
                     orgType: data.type,
                     timestamp: new Date().toISOString()
                   });
-                  
+
                   const response = await fetch('/api/onboarding-complete', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                      orgId: organization.id,
-                      orgName: organization.name,
+                      orgId: effectiveOrg.id,
+                      orgName: effectiveOrg.name,
                       orgType: data.type,
                     }),
                   });
@@ -144,7 +168,7 @@ function SelectOrgTypePageContent() {
                     headers: Object.fromEntries(response.headers.entries()),
                     timestamp: new Date().toISOString()
                   });
-                  
+
                   if (!response.ok) {
                     console.error("❌ SelectOrgType: Failed to complete onboarding", {
                       status: response.status,
@@ -153,19 +177,19 @@ function SelectOrgTypePageContent() {
                     });
                     throw new Error("Failed to complete onboarding");
                   }
-                  
+
                   // The API will handle redirect, but if it doesn't, we'll handle it here
                   if (response.redirected) {
                     console.log("✅ SelectOrgType: API redirected successfully");
                     window.location.href = response.url;
                     return;
                   }
-                  
+
                   // If no redirect from API, manually redirect to dashboard
                   console.log("✅ SelectOrgType: Onboarding completed successfully, redirecting to dashboard");
                   window.location.href = '/dashboard';
                   return;
-                  
+
                 } catch (error) {
                   console.error("❌ SelectOrgType: Organization type update failed", error);
                   toast({
@@ -178,32 +202,32 @@ function SelectOrgTypePageContent() {
                 }
               })} className="space-y-6">
                 <FormField
-                      control={form.control}
-                      name="type"
-                      render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Organization Type</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select organization type" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="shipper">Shipper</SelectItem>
-                                <SelectItem value="carrier">Carrier</SelectItem>
-                                <SelectItem value="escort">Escort / Pilot Car</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Organization Type</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select organization type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="shipper">Shipper</SelectItem>
+                          <SelectItem value="carrier">Carrier</SelectItem>
+                          <SelectItem value="escort">Escort / Pilot Car</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <Button type="submit" disabled={isUpdating} className="w-full">
                   {isUpdating ? "Updating Organization..." : "Complete Setup"}
                 </Button>
-                </form>
+              </form>
             </Form>
           </CardContent>
         </Card>

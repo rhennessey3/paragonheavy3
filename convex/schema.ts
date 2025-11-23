@@ -7,20 +7,22 @@ console.log("Defining Convex schema with tables: organizations, userProfiles, lo
 export default defineSchema({
   organizations: defineTable({
     name: v.string(),
+    slug: v.optional(v.string()), // URL-friendly identifier
     type: v.union(v.literal("shipper"), v.literal("carrier"), v.literal("escort")),
-    clerkOrgId: v.string(),
-    createdBy: v.string(),
+    clerkOrgId: v.optional(v.string()), // Legacy / Optional for migration
+    createdBy: v.string(), // Clerk User ID of creator
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_clerkOrgId", ["clerkOrgId"])
     .index("by_creator", ["createdBy"])
+    .index("by_slug", ["slug"])
     .index("by_type", ["type"]),
 
   userProfiles: defineTable({
     clerkUserId: v.string(),
-    clerkOrgId: v.string(),
-    orgId: v.id("organizations"),
+    clerkOrgId: v.optional(v.string()), // Legacy
+    orgId: v.optional(v.id("organizations")), // Link to internal org
     email: v.string(),
     name: v.string(),
     role: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member")),

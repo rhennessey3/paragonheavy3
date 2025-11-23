@@ -6,52 +6,48 @@ export const createOrganization = mutation({
   args: {
     name: v.string(),
     type: v.union(v.literal("shipper"), v.literal("carrier"), v.literal("escort")),
-    clerkOrgId: v.string(),
-    createdBy: v.string(),
+    slug: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    console.log("🔐 createOrganization called with:", {
-      createdBy: args.createdBy,
-      clerkOrgId: args.clerkOrgId,
-      name: args.name
-    });
-    
     const session = await requireAuthSession(ctx);
-    console.log("🔑 Auth session details:", {
-      sessionSub: session.sub,
-      sessionEmail: session.email,
-      sessionName: session.name
-    });
-    
-    console.log("🔍 Comparison check:", {
-      sessionSub: session.sub,
-      createdBy: args.createdBy,
-      areEqual: session.sub === args.createdBy,
-      types: {
-        sessionSubType: typeof session.sub,
-        createdByIdType: typeof args.createdBy
-      }
-    });
-    
-    if (session.sub !== args.createdBy) {
-      console.error("❌ Authorization failed:", {
-        sessionSub: session.sub,
-        createdBy: args.createdBy,
-        areEqual: session.sub === args.createdBy
-      });
-      throw new Error("Unauthorized: createdBy does not match session");
-    }
-
     const now = Date.now();
-    
+
+    // Generate slug if not provided
+    const slug = args.slug || args.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, "");
+
     const orgId = await ctx.db.insert("organizations", {
       name: args.name,
       type: args.type,
-      clerkOrgId: args.clerkOrgId,
-      createdBy: args.createdBy,
+      slug,
+      createdBy: session.sub,
       createdAt: now,
       updatedAt: now,
     });
+
+    // Automatically create/update user profile to be admin of this new org
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.patch(userProfile._id, {
+        orgId: orgId,
+        role: "admin",
+        onboardingCompleted: true,
+      });
+    } else {
+      await ctx.db.insert("userProfiles", {
+        clerkUserId: session.sub,
+        orgId: orgId,
+        email: session.email || "",
+        name: session.name || "",
+        role: "admin",
+        createdAt: now,
+        lastActiveAt: now,
+        onboardingCompleted: true,
+      });
+    }
 
     return orgId;
   },
@@ -67,6 +63,16 @@ export const getOrganization = query({
       .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
       .first();
 
+    return organization;
+  },
+});
+
+export const getOrganizationById = query({
+  args: {
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    const organization = await ctx.db.get(args.orgId);
     return organization;
   },
 });
@@ -94,7 +100,10 @@ export const getUserOrganizations = query({
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", userId))
       .collect();
 
-    const memberOrgIds = userProfiles.map(profile => profile.orgId);
+    const memberOrgIds = userProfiles
+      .map(profile => profile.orgId)
+      .filter((id): id is import("./_generated/dataModel").Id<"organizations"> => !!id);
+
     const memberOrgs = await Promise.all(
       memberOrgIds.map(orgId => ctx.db.get(orgId))
     );
@@ -118,7 +127,7 @@ export const updateOrganization = mutation({
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
     const { orgId, ...updates } = args;
-    
+
     const organization = await ctx.db.get(orgId);
     if (!organization) {
       throw new Error("Organization not found");
@@ -127,11 +136,11 @@ export const updateOrganization = mutation({
     // Phase 2: Only check if user is the creator
     // Role-based access control will be implemented in Phase 3
     // For now, roles exist purely as data without affecting access control
-    
+
     const isCreator = organization.createdBy === session.sub;
-    
+
     if (!isCreator) {
-        throw new Error("Unauthorized: Only the organization creator can update organization details in Phase 2");
+      throw new Error("Unauthorized: Only the organization creator can update organization details in Phase 2");
     }
 
     await ctx.db.patch(orgId, {
@@ -154,12 +163,12 @@ export const syncFromClerk = internalMutation({
       ...args,
       timestamp: new Date().toISOString()
     });
-    
+
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
       .first();
-    
+
     console.log("🔍 Existing organization check:", {
       clerkOrgId: args.clerkOrgId,
       existingOrg: !!existingOrg,
@@ -167,7 +176,7 @@ export const syncFromClerk = internalMutation({
       existingOrgName: existingOrg?.name,
       timestamp: new Date().toISOString()
     });
-    
+
     if (existingOrg) {
       // Update existing organization
       console.log("📝 Updating existing organization:", existingOrg._id);
@@ -185,7 +194,7 @@ export const syncFromClerk = internalMutation({
         hasCreatedBy: !!args.createdBy,
         timestamp: new Date().toISOString()
       });
-      
+
       // Check if this organization was created very recently (within last 10 seconds)
       const recentTimeThreshold = Date.now() - 10000; // 10 seconds ago
       const recentOrgs = await ctx.db
@@ -194,12 +203,12 @@ export const syncFromClerk = internalMutation({
           q.eq("clerkOrgId", args.clerkOrgId)
         )
         .collect();
-      
+
       const veryRecentOrg = recentOrgs.find(org =>
         org.clerkOrgId === args.clerkOrgId &&
         org.createdAt > recentTimeThreshold
       );
-      
+
       console.log("🕐 Race condition check:", {
         clerkOrgId: args.clerkOrgId,
         recentOrgsCount: recentOrgs.length,
@@ -207,7 +216,7 @@ export const syncFromClerk = internalMutation({
         recentTimeThreshold: new Date(recentTimeThreshold).toISOString(),
         timestamp: new Date().toISOString()
       });
-      
+
       // If createdBy is not provided, this is likely a webhook sync for an org
       // created by another process (like manual admin creation)
       if (!args.createdBy && !veryRecentOrg) {
@@ -246,7 +255,7 @@ export const updateOrganizationType = mutation({
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
-    
+
     const organization = await ctx.db
       .query("organizations")
       .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
@@ -283,7 +292,7 @@ export const markOnboardingComplete = mutation({
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
-    
+
     if (session.sub !== args.clerkUserId) {
       throw new Error("Unauthorized: clerkUserId does not match session");
     }

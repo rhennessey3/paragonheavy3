@@ -4,7 +4,7 @@
   "description": "A multi-tenant heavy haul logistics platform built with Next.js, Clerk, and Convex.",
   "private": true,
   "scripts": {
-    "dev": "(lsof -ti:3000 | xargs kill) || true && next dev",
+    "dev": "npx convex dev & next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -12,7 +12,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-  "deploy:dev": "cp .env.development .env.local && npx convex deploy --yes --verbose",
+    "deploy:dev": "cp .env.development .env.local && npx convex deploy --yes --verbose",
     "deploy:prod": "cp .env.production .env.local && npx convex deploy --yes --verbose"
   },
   "dependencies": {

@@ -9,19 +9,18 @@ import { EscortDashboard } from "@/components/dashboard/EscortDashboard";
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-  const { userId, orgId, getToken, sessionClaims } = useAuth();
+  const { userId, getToken, sessionClaims } = useAuth();
   const { user } = useUser();
   const [convexTokenClaims, setConvexTokenClaims] = useState<any>(null);
-  
-  const organization = useQuery(api.organizations.getOrganization, {
-    clerkOrgId: orgId || "",
-  });
-  
+
   const userProfile = useQuery(api.users.getUserProfile, {
     clerkUserId: userId || undefined,
   });
 
-  
+  const organization = useQuery(api.organizations.getOrganizationById,
+    userProfile?.orgId ? { orgId: userProfile.orgId } : "skip"
+  );
+
   const createUserProfile = useMutation(api.users.createUserProfile);
   const createOrganization = useMutation(api.organizations.createOrganization);
 
@@ -40,98 +39,32 @@ export default function DashboardPage() {
     fetchToken();
   }, [getToken]);
 
-  // Create user profile if it doesn't exist
-  useEffect(() => {
-    const ensureUserProfile = async () => {
-      if (userId && orgId && organization && !userProfile) {
-        try {
-          await createUserProfile({
-            clerkUserId: userId,
-            clerkOrgId: orgId,
-            orgId: organization._id,
-            email: user?.primaryEmailAddress?.emailAddress || "",
-            name: user?.fullName || user?.username || "",
-            role: "operator", // Default role for existing users
-          });
-          console.log("Created user profile for existing user");
-        } catch (error) {
-          console.error("Failed to create user profile:", error);
-        }
-      }
-    };
-    
-    ensureUserProfile();
-  }, [userId, orgId, organization, userProfile, createUserProfile, user]);
-
-  // Recovery mechanism: If user has orgId but no organization in Convex, sync it
-  useEffect(() => {
-    const syncMissingOrganization = async () => {
-      if (userId && orgId && !organization && user?.organizationMemberships && user.organizationMemberships.length > 0) {
-        console.log("🔄 Dashboard: Detected missing organization in Convex, attempting recovery sync", {
-          userId,
-          orgId,
-          clerkOrgs: user.organizationMemberships.map(org => ({
-            id: org.organization.id,
-            name: org.organization.name,
-            role: org.role
-          })),
-          timestamp: new Date().toISOString()
-        });
-
-        try {
-          // Find the matching organization from user's memberships
-          const matchingOrg = user.organizationMemberships.find(
-            membership => membership.organization.id === orgId
-          );
-
-          if (matchingOrg) {
-            console.log("🔧 Dashboard: Creating missing organization in Convex", {
-              name: matchingOrg.organization.name,
-              clerkOrgId: matchingOrg.organization.id,
-              createdBy: userId
-            });
-
-            // Create the organization in Convex
-            const convexOrgId = await createOrganization({
-              name: matchingOrg.organization.name,
-              type: (matchingOrg.organization.publicMetadata as any)?.type || "shipper",
-              clerkOrgId: matchingOrg.organization.id,
-              createdBy: userId,
-            });
-
-            console.log("✅ Dashboard: Organization recovery sync completed", {
-              convexOrgId,
-              timestamp: new Date().toISOString()
-            });
-          }
-        } catch (error) {
-          console.error("❌ Dashboard: Organization recovery sync failed", {
-            error,
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
-    };
-
-    syncMissingOrganization();
-  }, [userId, orgId, organization, user, createOrganization]);
-
   if (!userId) {
     console.log("❌ DashboardPage: Missing userId, showing loading state");
     return <div>Loading authentication...</div>;
   }
-  
-  console.log("✅ DashboardPage: userId present, proceeding (orgId optional)");
 
-  // Handle case when orgId is missing - show onboarding prompt
-  if (!orgId) {
+  // Wait for user profile to load
+  if (userProfile === undefined) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle case when orgId is missing in Convex profile - show onboarding prompt
+  if (!userProfile?.orgId) {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Welcome to Paragon Heavy</h1>
           <p className="text-muted-foreground">Let's get your organization set up</p>
         </div>
-        
+
         <div className="p-6 border rounded-lg bg-blue-50 border-blue-200">
           <h2 className="text-lg font-semibold text-blue-900 mb-2">Complete Your Organization Setup</h2>
           <p className="text-blue-700 mb-4">
@@ -171,7 +104,7 @@ export default function DashboardPage() {
           <p>Please contact support.</p>
           <p className="mt-2 text-sm text-muted-foreground">Org ID: {orgId}</p>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded border border-red-200 overflow-auto max-h-96">
             <h4 className="font-semibold mb-1 text-sm">Session Claims (Next.js):</h4>
@@ -187,7 +120,7 @@ export default function DashboardPage() {
               )}
             </pre>
           </div>
-          
+
           <div className="bg-white p-4 rounded border border-red-200 overflow-auto max-h-96">
             <h4 className="font-semibold mb-2 text-sm">Convex JWT Template:</h4>
             <pre className="text-xs whitespace-pre-wrap break-all">
@@ -229,11 +162,11 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
         <p className="text-muted-foreground">Welcome back to {organization.name}</p>
       </div>
-      
+
       {orgType === "shipper" && <ShipperDashboard />}
       {orgType === "carrier" && <CarrierDashboard />}
       {orgType === "escort" && <EscortDashboard />}
-      
+
       {!orgType && (
         <div className="p-4 border rounded bg-yellow-50 text-yellow-800">
           Unknown organization type. Please contact support.
@@ -281,12 +214,12 @@ function ClaimsChecklist({ claims }: { claims: any }) {
         // Based on the user's JSON output earlier: "o": { "id": ..., "rol": ... }
         // So "org_id" might be mapped to "org_id" if custom, or "o.id" if default.
         // But the user's template explicitly sets "org_id": "{{org.id}}".
-        
+
         // Let's stick to checking if the key exists in the object as provided.
         // Also check for null, as the user considers null as "missing"
         const value = claims[claim];
         const exists = value !== undefined && value !== null;
-        
+
         return (
           <div key={claim} className="flex items-center text-xs justify-between">
             <div className="flex items-center">

@@ -5,7 +5,7 @@ import { requireAuthSession } from "./auth";
 export const createUserProfile = mutation({
   args: {
     clerkUserId: v.string(),
-    clerkOrgId: v.string(),
+    clerkOrgId: v.optional(v.string()),
     orgId: v.id("organizations"),
     email: v.string(),
     name: v.string(),
@@ -18,7 +18,7 @@ export const createUserProfile = mutation({
     }
 
     const now = Date.now();
-    
+
     const userProfileId = await ctx.db.insert("userProfiles", {
       clerkUserId: args.clerkUserId,
       clerkOrgId: args.clerkOrgId,
@@ -59,7 +59,7 @@ export const getUserProfile = query({
 export const getUserProfileByOrg = query({
   args: {
     clerkUserId: v.string(),
-    clerkOrgId: v.string(),
+    clerkOrgId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userProfile = await ctx.db
@@ -95,7 +95,7 @@ export const updateUserProfile = mutation({
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
     const { userProfileId, ...updates } = args;
-    
+
     const userProfile = await ctx.db.get(userProfileId);
     if (!userProfile) {
       throw new Error("User profile not found");
@@ -150,7 +150,7 @@ export const syncFromClerk = internalMutation({
       orgRole: args.orgRole,
       emailVerified: args.emailVerified,
     });
-    
+
     const existingProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
@@ -199,15 +199,15 @@ export const syncFromClerk = internalMutation({
       } else {
         console.log("⚠️ No orgId provided for user sync");
       }
-      
+
       // If user doesn't have an organization in Clerk, check if they are a member of any organizations in Convex
       // This handles cases where user was added to an organization directly in Convex
       const existingOrgs = await ctx.db
         .query("organizations")
         .collect();
-      
+
       console.log("📊 Total organizations in database:", existingOrgs.length);
-      
+
       // For now, we won't auto-create profiles without an organization
       // User should be explicitly added to organizations
     }
@@ -241,34 +241,34 @@ export const updateMemberRole = mutation({
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
-    
+
     // Get the user profile to update
     const userProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.userId))
       .filter((q) => q.eq(q.field("orgId"), args.orgId))
       .first();
-      
+
     if (!userProfile) {
       throw new Error("User profile not found in this organization");
     }
-    
+
     // Check if the current user is an admin of this organization
     const currentUserProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
       .filter((q) => q.eq(q.field("orgId"), args.orgId))
       .first();
-      
+
     if (!currentUserProfile || currentUserProfile.role !== "admin") {
       throw new Error("Unauthorized: Only admins can update member roles");
     }
-    
+
     // Update the role
     await ctx.db.patch(userProfile._id, {
       role: args.newRole,
     });
-    
+
     return userProfile._id;
   },
 });
@@ -282,7 +282,7 @@ export const getOrganizationMembers = query({
       .query("userProfiles")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .collect();
-      
+
     return members;
   },
 });
@@ -295,7 +295,7 @@ export const markOnboardingCompleted = mutation({
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
-    
+
     if (session.sub !== args.clerkUserId) {
       throw new Error("Unauthorized: clerkUserId does not match session");
     }
