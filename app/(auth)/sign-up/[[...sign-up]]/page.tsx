@@ -1,3 +1,5 @@
+"use client";
+
 import { SignUp } from "@clerk/nextjs";
 import Link from "next/link";
 
@@ -10,7 +12,8 @@ export default function SignUpPage() {
       </div>
       
       <SignUp
-        forceRedirectUrl="/sign-up/tasks/create-org-name"
+        forceRedirectUrl="/sign-up/tasks/create-organization"
+        redirectUrl="/sign-up/tasks/create-organization"
         appearance={{
           elements: {
             formButtonPrimary: "bg-primary hover:bg-primary/90 text-sm normal-case",

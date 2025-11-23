@@ -18,7 +18,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        elements: {
+          formButtonPrimary: "bg-primary hover:bg-primary/90 text-sm normal-case",
+          card: "shadow-lg",
+        },
+      }}
+      // Prevent Clerk from showing organization creation UI
+      signInForceRedirectUrl="/sign-up/tasks/create-organization"
+      signUpForceRedirectUrl="/sign-up/tasks/create-organization"
+    >
       <ConvexClientProvider>
         <html lang="en">
           <body className={inter.className}>

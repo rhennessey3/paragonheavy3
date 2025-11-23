@@ -1,6 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth, clerkClient } from "@clerk/nextjs/server";
 
+export async function GET(request: NextRequest) {
+  console.log("🏢 /api/organizations GET request received", {
+    timestamp: new Date().toISOString(),
+    headers: Object.fromEntries(request.headers.entries())
+  });
+  
+  try {
+    const { userId } = getAuth(request);
+    console.log("🔐 Auth check:", {
+      userId: userId ? "present" : "missing",
+      userIdValue: userId,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (!userId) {
+      console.error("❌ Unauthorized: No userId found", {
+        timestamp: new Date().toISOString()
+      });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    console.log("🔍 Fetching user organizations from Clerk...", {
+      userId,
+      timestamp: new Date().toISOString()
+    });
+    
+    const clerk = await clerkClient();
+    const memberships = await clerk.users.getOrganizationMembershipList({ userId });
+    
+    console.log("✅ User organizations fetched:", {
+      count: memberships.data.length,
+      organizations: memberships.data.map(membership => ({
+        id: membership.organization.id,
+        name: membership.organization.name,
+        role: membership.role
+      })),
+      timestamp: new Date().toISOString()
+    });
+    
+    return NextResponse.json(memberships.data.map(membership => ({
+      id: membership.organization.id,
+      name: membership.organization.name,
+      role: membership.role
+    })));
+  } catch (error) {
+    console.error("❌ Error in /api/organizations GET:", {
+      error: error,
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+      errorStack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString()
+    });
+    return NextResponse.json(
+      { error: "Failed to fetch organizations" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   console.log("🏢 /api/organizations POST request received", {
     timestamp: new Date().toISOString(),

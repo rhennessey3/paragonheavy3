@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useUser, useOrganizationList } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { useState, Suspense } from "react";
+import { useUser, useOrganization } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -11,7 +10,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/components/ui/use-toast";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 const createOrgTypeSchema = z.object({
   type: z.enum(["shipper", "carrier", "escort"]),
@@ -19,19 +18,13 @@ const createOrgTypeSchema = z.object({
 
 type CreateOrgTypeValues = z.infer<typeof createOrgTypeSchema>;
 
-export default function SelectOrgTypePage() {
+function SelectOrgTypePageContent() {
   const { user, isLoaded: isUserLoaded } = useUser();
-  const { setActive } = useOrganizationList();
+  const { organization, isLoaded: isOrgLoaded } = useOrganization();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();
-  
 
-  // Get organization name from URL parameter
-  const orgName = searchParams.get('name') || '';
-
-  // Add logging for page load and state
   console.log("🏢 SelectOrgType: Page loaded", {
     isUserLoaded,
     user: user ? {
@@ -39,17 +32,11 @@ export default function SelectOrgTypePage() {
       email: user.primaryEmailAddress?.emailAddress,
       fullName: user.fullName
     } : null,
-    orgName,
-    searchParams: Object.fromEntries(searchParams.entries()),
-    timestamp: new Date().toISOString()
-  });
-
-  // Add logging for URL parameter parsing
-  console.log("🔍 SelectOrgType: URL parameter analysis", {
-    rawSearchParams: searchParams.toString(),
-    orgNameParam: searchParams.get('name'),
-    orgNameDecoded: orgName,
-    hasOrgName: !!orgName,
+    isOrgLoaded,
+    organization: organization ? {
+      id: organization.id,
+      name: organization.name,
+    } : null,
     timestamp: new Date().toISOString()
   });
 
@@ -60,10 +47,9 @@ export default function SelectOrgTypePage() {
     },
   });
 
-
-  if (!isUserLoaded) {
-    console.log("⏳ SelectOrgType: User not loaded yet, showing loading...");
-    return <div>Loading user data...</div>;
+  if (!isUserLoaded || !isOrgLoaded) {
+    console.log("⏳ SelectOrgType: Loading user or organization data...");
+    return <div>Loading...</div>;
   }
 
   if (!user) {
@@ -71,23 +57,22 @@ export default function SelectOrgTypePage() {
     return <div>Error: No user found. Please try signing up again.</div>;
   }
 
-  // If no organization name provided, redirect back to name entry
-  if (!orgName) {
-    console.log("⚠️ SelectOrgType: No organization name found, redirecting back to create-org-name", {
-      orgName,
-      searchParams: searchParams.toString(),
+  if (!organization) {
+    console.log("⚠️ SelectOrgType: No organization found, redirecting back to create-organization", {
+      organization,
+      timestamp: new Date().toISOString(),
       currentUrl: window.location.href,
-      timestamp: new Date().toISOString()
+      clerkLoaded: { isUserLoaded, isOrgLoaded }
     });
-    console.log("🔄 SelectOrgType: About to redirect to create-org-name");
-    router.push('/sign-up/tasks/create-org-name');
+    
+    router.push('/sign-up/tasks/create-organization');
     return <div>Redirecting...</div>;
   }
 
   console.log("✅ SelectOrgType: All checks passed, rendering form", {
-    orgName,
+    orgId: organization.id,
+    orgName: organization.name,
     currentUrl: window.location.href,
-    searchParams: searchParams.toString(),
     timestamp: new Date().toISOString()
   });
 
@@ -107,117 +92,137 @@ export default function SelectOrgTypePage() {
         <div className="text-center">
           <h1 className="text-3xl font-bold text-foreground">Select Organization Type</h1>
           <p className="mt-2 text-muted-foreground">
-            Organization: <span className="font-medium">{orgName}</span>
+            Organization: <span className="font-medium">{organization.name}</span>
           </p>
         </div>
         
         <Card>
           <CardHeader>
-              <CardTitle>What type of organization is this?</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(async (data) => {
-                  console.log("🚀 SelectOrgType: Form submission started", {
-                    data,
-                    orgName,
-                    user: user ? {
-                      id: user.id,
-                      email: user.primaryEmailAddress?.emailAddress,
-                      existingOrgs: user.organizationMemberships?.length || 0
-                    } : null,
+            <CardTitle>What type of organization is this?</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(async (data) => {
+                console.log("🚀 SelectOrgType: Form submission started", {
+                  data,
+                  orgId: organization.id,
+                  orgName: organization.name,
+                  user: user ? {
+                    id: user.id,
+                    email: user.primaryEmailAddress?.emailAddress,
+                  } : null,
+                  timestamp: new Date().toISOString()
+                });
+                
+                setIsUpdating(true);
+                
+                try {
+                  // Call onboarding-complete API with orgId and orgType
+                  console.log("🎯 SelectOrgType: Calling onboarding-complete API...", {
+                    orgId: organization.id,
+                    orgName: organization.name,
+                    orgType: data.type,
                     timestamp: new Date().toISOString()
                   });
                   
-                  setIsCreating(true);
-                  
-                  try {
-                    
-                    // Find the user's organization
-                    
-                    
-                    // Call onboarding-complete API with orgName and orgType
-                    console.log("🎯 SelectOrgType: Calling onboarding-complete API...", {
-                      orgName,
+                  const response = await fetch('/api/onboarding-complete', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      orgId: organization.id,
+                      orgName: organization.name,
                       orgType: data.type,
-                      timestamp: new Date().toISOString()
-                    });
-                    
-                    const response = await fetch('/api/onboarding-complete', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                        orgName,
-                        orgType: data.type,
-                      }),
-                    });
-                    
-                    if (!response.ok) {
-                      console.error("❌ SelectOrgType: Failed to complete onboarding", {
-                        status: response.status,
-                        statusText: response.statusText
-                      });
-                      throw new Error("Failed to complete onboarding");
-                    }
-                    
-                    // The API will handle redirect, but if it doesn't, we'll handle it here
-                    if (response.redirected) {
-                      console.log("✅ SelectOrgType: API redirected successfully");
-                      window.location.href = response.url;
-                      return;
-                    }
-                    
-                    // If no redirect from API, manually redirect to dashboard
-                    console.log("✅ SelectOrgType: Onboarding completed successfully, redirecting to dashboard");
-                    window.location.href = '/dashboard';
-                    return;
-                    
-                    
-                    
-                  } catch (error) {
-                    console.error("❌ SelectOrgType: Organization type update failed", error);
-                    toast({
-                      title: "Error",
-                      description: "Failed to update organization type. Please try again.",
-                      variant: "destructive",
-                    });
-                  } finally {
-                    setIsCreating(false);
-                  }
-                })} className="space-y-6">
-                  <FormField
-                        control={form.control}
-                        name="type"
-                        render={({ field }) => (
-                          <FormItem>
-                              <FormLabel>Organization Type</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select organization type" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="shipper">Shipper</SelectItem>
-                                  <SelectItem value="carrier">Carrier</SelectItem>
-                                  <SelectItem value="escort">Escort / Pilot Car</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                    }),
+                  });
 
-                  <Button type="submit" disabled={isCreating} className="w-full">
-                    {isCreating ? "Updating Organization..." : "Complete Setup"}
-                  </Button>
-                  </form>
-              </Form>
-            </CardContent>
+                  console.log("🎯 SelectOrgType: API response received", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    ok: response.ok,
+                    headers: Object.fromEntries(response.headers.entries()),
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  if (!response.ok) {
+                    console.error("❌ SelectOrgType: Failed to complete onboarding", {
+                      status: response.status,
+                      statusText: response.statusText,
+                      body: await response.text()
+                    });
+                    throw new Error("Failed to complete onboarding");
+                  }
+                  
+                  // The API will handle redirect, but if it doesn't, we'll handle it here
+                  if (response.redirected) {
+                    console.log("✅ SelectOrgType: API redirected successfully");
+                    window.location.href = response.url;
+                    return;
+                  }
+                  
+                  // If no redirect from API, manually redirect to dashboard
+                  console.log("✅ SelectOrgType: Onboarding completed successfully, redirecting to dashboard");
+                  window.location.href = '/dashboard';
+                  return;
+                  
+                } catch (error) {
+                  console.error("❌ SelectOrgType: Organization type update failed", error);
+                  toast({
+                    title: "Error",
+                    description: "Failed to update organization type. Please try again.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsUpdating(false);
+                }
+              })} className="space-y-6">
+                <FormField
+                      control={form.control}
+                      name="type"
+                      render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Organization Type</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select organization type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="shipper">Shipper</SelectItem>
+                                <SelectItem value="carrier">Carrier</SelectItem>
+                                <SelectItem value="escort">Escort / Pilot Car</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                <Button type="submit" disabled={isUpdating} className="w-full">
+                  {isUpdating ? "Updating Organization..." : "Complete Setup"}
+                </Button>
+                </form>
+            </Form>
+          </CardContent>
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function SelectOrgTypePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <SelectOrgTypePageContent />
+    </Suspense>
   );
 }

@@ -2,7 +2,7 @@
 
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 
 // Add diagnostic logging
@@ -29,14 +29,6 @@ console.log = (...args) => {
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
-
-  useEffect(() => {
-    console.log("🔐 Auth state changed:", {
-      isLoaded: auth.isLoaded,
-      isSignedIn: auth.isSignedIn,
-      userId: auth.userId
-    });
-  }, [auth.isLoaded, auth.isSignedIn, auth.userId]);
 
   return (
     <ConvexProviderWithClerk client={convex} useAuth={useAuth}>

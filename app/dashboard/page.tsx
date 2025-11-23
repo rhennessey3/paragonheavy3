@@ -138,7 +138,7 @@ export default function DashboardPage() {
             You need to create an organization to access the full dashboard features.
           </p>
           <a
-            href="/sign-up/tasks/create-org-name"
+            href="/sign-up/tasks/create-organization"
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
           >
             Create Organization

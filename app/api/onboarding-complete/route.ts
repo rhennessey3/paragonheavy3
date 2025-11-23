@@ -41,20 +41,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    const { orgName, orgType } = requestBody;
+    const { orgId, orgName, orgType } = requestBody;
     console.log("📋 Organization data:", {
+      orgId,
       orgName,
       orgType,
       timestamp: new Date().toISOString()
     });
 
-    if (!orgName || !orgType) {
+    if (!orgId || !orgName || !orgType) {
       console.error("❌ Missing required organization fields", {
+        orgId: !!orgId,
         orgName: !!orgName,
         orgType: !!orgType,
         timestamp: new Date().toISOString()
       });
-      return NextResponse.json({ error: "Missing required fields: orgName and orgType" }, { status: 400 });
+      return NextResponse.json({ error: "Missing required fields: orgId, orgName and orgType" }, { status: 400 });
     }
 
     if (!["shipper", "carrier", "escort"].includes(orgType)) {
@@ -69,33 +71,25 @@ export async function POST(request: NextRequest) {
     // Initialize Convex client
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
     
-    console.log("🏢 Creating organization in Clerk...", {
+    console.log("🏢 Updating organization metadata in Clerk...", {
+      orgId,
       orgName,
       orgType,
-      createdBy: userId,
       timestamp: new Date().toISOString()
     });
     
-    // Step 1: Create the Clerk organization
+    // Step 1: Update the existing Clerk organization with type metadata
     const clerk = await clerkClient();
-    const clerkOrganization = await clerk.organizations.createOrganization({
-      name: orgName,
-      createdBy: userId!,
+    const clerkOrganization = await clerk.organizations.updateOrganization(orgId, {
       publicMetadata: {
         type: orgType,
       },
     });
 
-    // Step 1.5: Add user as admin to the Clerk organization
-    await clerk.organizations.createOrganizationMembership({
-      organizationId: clerkOrganization.id,
-      userId: userId!,
-      role: "admin",
-    });
-
-    console.log("✅ Clerk organization created successfully:", {
+    console.log("✅ Clerk organization updated successfully:", {
       id: clerkOrganization.id,
       name: clerkOrganization.name,
+      metadata: clerkOrganization.publicMetadata,
       timestamp: new Date().toISOString()
     });
 
@@ -151,6 +145,20 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ Onboarding completion cookie set successfully", {
       userId,
+      cookieSet: "ph_onboarding_completed=true",
+      cookieOptions: {
+        httpOnly: true,
+        path: "/",
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 60 * 60 * 24 * 365
+      },
+      timestamp: new Date().toISOString()
+    });
+
+    // DEBUG: Log all cookies being set
+    console.log("🍪 DEBUG: All cookies in response:", {
+      allCookies: cookieStore.getAll(),
       timestamp: new Date().toISOString()
     });
 
@@ -160,7 +168,16 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     });
 
-    return NextResponse.redirect(new URL("/dashboard", request.url), 303);
+    // Create response with proper cookie handling
+    const response = NextResponse.redirect(new URL("/dashboard", request.url), 303);
+    
+    console.log("🍪 DEBUG: Response created with redirect", {
+      redirectUrl: new URL("/dashboard", request.url).toString(),
+      responseHeaders: Object.fromEntries(response.headers.entries()),
+      timestamp: new Date().toISOString()
+    });
+
+    return response;
   } catch (error) {
     console.error("❌ Error in /api/onboarding-complete:", {
       error: error,

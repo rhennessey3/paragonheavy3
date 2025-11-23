@@ -5,57 +5,53 @@ const isPublicRoute = createRouteMatcher([
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
-  '/sign-up/tasks/create-org-name(.*)',
+  '/sign-up/tasks/create-organization(.*)',
   '/sign-up/tasks/select-org-type(.*)',
+  '/sign-up/tasks/choose-organization(.*)',
   '/api/webhooks(.*)',
   '/api/onboarding-complete(.*)'
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  const { userId, orgId } = await auth();
-  console.log(`🔄 Middleware processing: ${req.nextUrl.pathname}`);
-  console.log(`🔐 Auth state: userId=${userId}, orgId=${orgId}`);
-  console.log(`🌐 Full URL: ${req.url}`);
-  console.log(`🔍 Headers:`, Object.fromEntries(req.headers.entries()));
+  const { userId, orgId, sessionClaims } = await auth();
   
   const cookieHeader = req.headers.get("cookie") ?? "";
   const onboardingCompleted =
     cookieHeader.includes("ph_onboarding_completed=true");
-  console.log(`🍪 Onboarding cookie: ${onboardingCompleted ? 'completed' : 'not completed'}`);
 
   const path = req.nextUrl.pathname;
 
   // 1) User logged in, onboarding NOT completed → force them into onboarding tasks
-  if (userId && !onboardingCompleted) {
+  // BUT ONLY after email verification is complete to prevent redirect loops
+  if (userId && !onboardingCompleted && sessionClaims?.emailVerified) {
     const allowed = [
-      "/sign-up/tasks/create-org-name",
+      "/sign-up/tasks/create-organization",
       "/sign-up/tasks/select-org-type",
+      "/sign-up/tasks/choose-organization",
       "/api/organizations",
       "/api/switch-organization",
+      "/api/onboarding-complete",
     ];
 
     const isAllowed = allowed.some((prefix) => path.startsWith(prefix));
 
-    if (!isAllowed) {
-      console.log(`⚠️ Redirecting to create-org-name: User logged in but onboarding not completed`);
-      console.log(`📍 Current path: ${path}`);
-      console.log(`📍 Redirect target: /sign-up/tasks/create-org-name`);
-      const url = new URL("/sign-up/tasks/create-org-name", req.url);
-      return NextResponse.redirect(url);
+    if (isAllowed) {
+      return NextResponse.next();
     }
+
+    const url = new URL("/sign-up/tasks/create-organization", req.url);
+    return NextResponse.redirect(url);
   }
 
   // 2) User logged in, onboarding completed → keep them away from auth + onboarding pages
-  if (userId && onboardingCompleted) {
+  // Only apply this rule after email verification is complete
+  if (userId && onboardingCompleted && sessionClaims?.emailVerified) {
     const isAuthOrOnboarding =
       path.startsWith("/sign-in") ||
       path.startsWith("/sign-up") ||
       path.startsWith("/sign-up/tasks");
 
     if (isAuthOrOnboarding) {
-      console.log(`🔄 Redirecting to dashboard: User completed onboarding but trying to access auth/onboarding pages`);
-      console.log(`📍 Current path: ${path}`);
-      console.log(`📍 Redirect target: /dashboard`);
       const dashboardUrl = new URL("/dashboard", req.url);
       return NextResponse.redirect(dashboardUrl, { status: 303 });
     }
@@ -63,9 +59,6 @@ export default clerkMiddleware(async (auth, req) => {
 
   // 3) Existing unauthenticated logic:
   if (!userId && !isPublicRoute(req) && path !== "/") {
-    console.log(`🔄 Redirecting to sign-in: Unauthenticated user trying to access protected route`);
-    console.log(`📍 Current path: ${path}`);
-    console.log(`📍 Redirect target: /sign-in`);
     const signInUrl = new URL("/sign-in", req.url);
     return NextResponse.redirect(signInUrl);
   }
