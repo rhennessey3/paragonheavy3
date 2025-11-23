@@ -38,18 +38,12 @@ export const createUserProfile = mutation({
 
 export const getUserProfile = query({
   args: {
-    clerkUserId: v.optional(v.string()),
+    clerkUserId: v.string(),
   },
   handler: async (ctx, args) => {
-    let userId = args.clerkUserId;
-    if (!userId) {
-      const session = await requireAuthSession(ctx);
-      userId = session.sub;
-    }
-
     const userProfile = await ctx.db
       .query("userProfiles")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", userId))
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
       .first();
 
     return userProfile;

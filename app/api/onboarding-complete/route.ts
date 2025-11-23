@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     timestamp: new Date().toISOString(),
     headers: Object.fromEntries(request.headers.entries())
   });
-  
+
   try {
     const { userId } = getAuth(request);
     console.log("🔐 Auth check:", {
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       userIdValue: userId,
       timestamp: new Date().toISOString()
     });
-    
+
     if (!userId) {
       console.error("❌ Unauthorized: No userId found", {
         timestamp: new Date().toISOString()
@@ -70,14 +70,14 @@ export async function POST(request: NextRequest) {
 
     // Initialize Convex client
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-    
+
     console.log("🏢 Updating organization metadata in Clerk...", {
       orgId,
       orgName,
       orgType,
       timestamp: new Date().toISOString()
     });
-    
+
     // Step 1: Update the existing Clerk organization with type metadata
     const clerk = await clerkClient();
     const clerkOrganization = await clerk.organizations.updateOrganization(orgId, {
@@ -105,8 +105,6 @@ export async function POST(request: NextRequest) {
     const convexOrgId = await convex.mutation(api.organizations.createOrganization, {
       name: orgName,
       type: orgType,
-      clerkOrgId: clerkOrganization.id,
-      createdBy: userId,
     });
 
     console.log("✅ Convex organization record created successfully:", {
@@ -132,7 +130,7 @@ export async function POST(request: NextRequest) {
     });
 
     console.log("🍪 Setting onboarding completion cookie for user:", userId);
-    
+
     // Step 4: Set the ph_onboarding_completed=true cookie
     const cookieStore = cookies();
     cookieStore.set("ph_onboarding_completed", "true", {
@@ -170,7 +168,7 @@ export async function POST(request: NextRequest) {
 
     // Create response with proper cookie handling
     const response = NextResponse.redirect(new URL("/dashboard", request.url), 303);
-    
+
     console.log("🍪 DEBUG: Response created with redirect", {
       redirectUrl: new URL("/dashboard", request.url).toString(),
       responseHeaders: Object.fromEntries(response.headers.entries()),

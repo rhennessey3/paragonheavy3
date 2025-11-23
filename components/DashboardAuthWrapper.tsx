@@ -15,9 +15,9 @@ export default function DashboardAuthWrapper({
     const { isLoaded: isAuthLoaded, userId } = useAuth();
 
     // Fetch user profile and organization
-    const userProfile = useQuery(api.users.getUserProfile, {
-        clerkUserId: userId || undefined
-    });
+    const userProfile = useQuery(api.users.getUserProfile,
+        userId ? { clerkUserId: userId } : "skip"
+    );
 
     // We can also fetch the org directly if we have the ID from the profile
     const org = useQuery(api.organizations.getOrganizationById,

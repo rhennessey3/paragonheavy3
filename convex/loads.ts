@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireAuthSession } from "./auth";
 
 export const createLoad = mutation({
   args: {
@@ -34,11 +35,13 @@ export const createLoad = mutation({
     })),
   },
   handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
     const now = Date.now();
-    
+
     const loadId = await ctx.db.insert("loads", {
       loadNumber: args.loadNumber,
       orgId: args.orgId,
+      createdBy: session.sub, // Clerk user ID
       status: "draft",
       origin: args.origin,
       destination: args.destination,
@@ -91,6 +94,41 @@ export const getOrganizationLoads = query({
   },
 });
 
+// New: Get loads scoped to specific user within their org
+export const getUserLoads = query({
+  args: {
+    userId: v.string(), // Clerk user ID
+    orgId: v.id("organizations"),
+    status: v.optional(v.union(
+      v.literal("draft"),
+      v.literal("available"),
+      v.literal("assigned"),
+      v.literal("in_transit"),
+      v.literal("delivered"),
+      v.literal("cancelled")
+    )),
+  },
+  handler: async (ctx, args) => {
+    // Get all loads for this organization
+    let loads = await ctx.db
+      .query("loads")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .collect();
+
+    // Filter for user's loads OR loads without createdBy (legacy support)
+    loads = loads.filter(load =>
+      !load.createdBy || load.createdBy === args.userId
+    );
+
+    // Apply status filter if provided
+    if (args.status) {
+      loads = loads.filter(load => load.status === args.status);
+    }
+
+    return loads;
+  },
+});
+
 export const getAvailableLoads = query({
   args: {
     limit: v.optional(v.number()),
@@ -100,7 +138,7 @@ export const getAvailableLoads = query({
       .query("loads")
       .withIndex("by_status", (q) => q.eq("status", "available"))
       .take(args.limit || 100);
-    
+
     return loads;
   },
 });
@@ -147,7 +185,7 @@ export const updateLoadStatus = mutation({
   },
   handler: async (ctx, args) => {
     const { loadId, status, carrierOrgId, escortOrgId } = args;
-    
+
     const load = await ctx.db.get(loadId);
     if (!load) {
       throw new Error("Load not found");
@@ -206,7 +244,7 @@ export const updateLoad = mutation({
   },
   handler: async (ctx, args) => {
     const { loadId, ...updates } = args;
-    
+
     const load = await ctx.db.get(loadId);
     if (!load) {
       throw new Error("Load not found");

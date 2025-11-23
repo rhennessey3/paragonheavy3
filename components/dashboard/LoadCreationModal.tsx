@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,21 +7,36 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
+import type { Id } from "@/convex/_generated/dataModel";
 
 interface LoadCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
   orgType: "shipper" | "carrier" | "escort";
+  editingLoadId?: Id<"loads"> | null;
 }
 
-export function LoadCreationModal({ isOpen, onClose, orgType }: LoadCreationModalProps) {
-  const { userId, orgId } = useAuth();
+export function LoadCreationModal({ isOpen, onClose, orgType, editingLoadId }: LoadCreationModalProps) {
+  const { userId } = useAuth();
   const { user } = useUser();
-  
+
   const createLoad = useMutation(api.loads.createLoad);
-  const organization = useQuery(api.organizations.getOrganization, {
-    clerkOrgId: orgId || "",
-  });
+  const updateLoad = useMutation(api.loads.updateLoad);
+
+  // Get user profile first to find their organization
+  const userProfile = useQuery(api.users.getUserProfile,
+    userId ? { clerkUserId: userId } : "skip"
+  );
+
+  // Then get the organization using the internal ID
+  const organization = useQuery(api.organizations.getOrganizationById,
+    userProfile?.orgId ? { orgId: userProfile.orgId } : "skip"
+  );
+
+  // Fetch load data if editing
+  const editingLoadData = useQuery(api.loads.getLoad,
+    editingLoadId ? { loadId: editingLoadId } : "skip"
+  );
 
   const [formData, setFormData] = useState({
     loadNumber: `${orgType?.toUpperCase()}-${Date.now()}`,
@@ -56,19 +71,92 @@ export function LoadCreationModal({ isOpen, onClose, orgType }: LoadCreationModa
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Populate form when editing
+  useEffect(() => {
+    if (editingLoadData) {
+      setFormData({
+        loadNumber: editingLoadData.loadNumber,
+        origin: editingLoadData.origin,
+        destination: editingLoadData.destination,
+        dimensions: {
+          ...editingLoadData.dimensions,
+          description: editingLoadData.dimensions.description || "",
+        },
+        pickupDate: editingLoadData.pickupDate ? new Date(editingLoadData.pickupDate).toISOString().split('T')[0] : "",
+        deliveryDate: editingLoadData.deliveryDate ? new Date(editingLoadData.deliveryDate).toISOString().split('T')[0] : "",
+        specialRequirements: editingLoadData.specialRequirements || "",
+        contactInfo: editingLoadData.contactInfo || {
+          name: user?.fullName || user?.username || "",
+          phone: "",
+          email: user?.primaryEmailAddress?.emailAddress || "",
+        },
+      });
+    }
+  }, [editingLoadData, user]);
+
+  const handleAutofill = () => {
+    const today = new Date();
+    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    setFormData({
+      loadNumber: `${orgType?.toUpperCase()}-${Date.now()}`,
+      origin: {
+        address: "123 Industrial Parkway",
+        city: "Houston",
+        state: "TX",
+        zip: "77001",
+      },
+      destination: {
+        address: "456 Warehouse Drive",
+        city: "Los Angeles",
+        state: "CA",
+        zip: "90001",
+      },
+      dimensions: {
+        height: 13.5,
+        width: 8.5,
+        length: 53,
+        weight: 45000,
+        description: "Heavy machinery on flatbed trailer",
+      },
+      pickupDate: today.toISOString().split('T')[0],
+      deliveryDate: nextWeek.toISOString().split('T')[0],
+      specialRequirements: "Requires police escort in California. Oversize load permit needed.",
+      contactInfo: {
+        name: user?.fullName || user?.username || "John Doe",
+        phone: "(555) 123-4567",
+        email: user?.primaryEmailAddress?.emailAddress || "contact@example.com",
+      },
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId || !orgId || !organization) return;
+    if (!userId || !userProfile?.orgId || !organization) {
+      console.error("Missing required data:", { userId, orgId: userProfile?.orgId, organization });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await createLoad({
-        ...formData,
-        orgId: organization._id,
-        pickupDate: formData.pickupDate ? new Date(formData.pickupDate).getTime() : undefined,
-        deliveryDate: formData.deliveryDate ? new Date(formData.deliveryDate).getTime() : undefined,
-      });
-      
+      if (editingLoadId) {
+        // Update existing load
+        await updateLoad({
+          loadId: editingLoadId,
+          ...formData,
+          pickupDate: formData.pickupDate ? new Date(formData.pickupDate).getTime() : undefined,
+          deliveryDate: formData.deliveryDate ? new Date(formData.deliveryDate).getTime() : undefined,
+        });
+      } else {
+        // Create new load
+        await createLoad({
+          ...formData,
+          orgId: organization._id,
+          pickupDate: formData.pickupDate ? new Date(formData.pickupDate).getTime() : undefined,
+          deliveryDate: formData.deliveryDate ? new Date(formData.deliveryDate).getTime() : undefined,
+        });
+      }
+
       // Reset form
       setFormData({
         loadNumber: `${orgType?.toUpperCase()}-${Date.now()}`,
@@ -84,10 +172,10 @@ export function LoadCreationModal({ isOpen, onClose, orgType }: LoadCreationModa
           email: user?.primaryEmailAddress?.emailAddress || "",
         },
       });
-      
+
       onClose();
     } catch (error) {
-      console.error("Failed to create load:", error);
+      console.error("Failed to save load:", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -96,8 +184,8 @@ export function LoadCreationModal({ isOpen, onClose, orgType }: LoadCreationModa
   const handleInputChange = (section: string, field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
-      [section]: section === "dimensions" || section === "contactInfo" 
-        ? { ...prev[section], [field]: value }
+      [section]: section === "dimensions" || section === "contactInfo"
+        ? { ...prev[section as keyof typeof prev], [field]: value }
         : { ...prev, [field]: value }
     }));
   };
@@ -108,7 +196,18 @@ export function LoadCreationModal({ isOpen, onClose, orgType }: LoadCreationModa
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
         <CardHeader>
-          <CardTitle>Create New Load - {orgType?.charAt(0).toUpperCase() + orgType?.slice(1)}</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>{editingLoadId ? "Edit" : "Create New"} Load - {orgType?.charAt(0).toUpperCase() + orgType?.slice(1)}</CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAutofill}
+              className="text-xs"
+            >
+              🎲 Autofill (Test)
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -339,7 +438,7 @@ export function LoadCreationModal({ isOpen, onClose, orgType }: LoadCreationModa
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Creating..." : "Create Load"}
+                {isSubmitting ? (editingLoadId ? "Updating..." : "Creating...") : (editingLoadId ? "Update Load" : "Create Load")}
               </Button>
             </div>
           </form>

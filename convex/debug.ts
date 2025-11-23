@@ -6,7 +6,7 @@ export const checkAllTables = query({
   args: {},
   handler: async (ctx) => {
     console.log("DEBUG: Checking all tables accessibility");
-    
+
     const results = {
       organizations: {
         exists: true,
@@ -67,7 +67,7 @@ export const createSampleData = mutation({
   args: {},
   handler: async (ctx) => {
     console.log("DEBUG: Creating sample data for all tables");
-    
+
     // Create sample organization if none exists
     const existingOrgs = await ctx.db.query("organizations").collect();
     if (existingOrgs.length === 0) {
@@ -80,7 +80,7 @@ export const createSampleData = mutation({
         updatedAt: Date.now(),
       });
       console.log(`DEBUG: Created sample organization: ${orgId}`);
-      
+
       // Create sample user profile
       const userProfileId = await ctx.db.insert("userProfiles", {
         clerkUserId: "sample_user_123",
@@ -94,11 +94,12 @@ export const createSampleData = mutation({
         onboardingCompleted: false,
       });
       console.log(`DEBUG: Created sample user profile with onboardingCompleted: false: ${userProfileId}`);
-      
+
       // Create sample load
       const loadId = await ctx.db.insert("loads", {
         loadNumber: "SAMPLE-001",
         orgId: orgId,
+        createdBy: "sample_user_123",
         status: "draft",
         origin: {
           address: "123 Sample St",
@@ -123,7 +124,7 @@ export const createSampleData = mutation({
         updatedAt: Date.now(),
       });
       console.log(`DEBUG: Created sample load: ${loadId}`);
-      
+
       return {
         success: true,
         orgId,
@@ -132,7 +133,7 @@ export const createSampleData = mutation({
         message: "Sample data created for all tables"
       };
     }
-    
+
     return {
       success: false,
       message: "Sample data already exists"

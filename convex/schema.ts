@@ -38,6 +38,7 @@ export default defineSchema({
   loads: defineTable({
     loadNumber: v.string(),
     orgId: v.id("organizations"),
+    createdBy: v.optional(v.string()), // Optional for backward compatibility with existing loads
     carrierOrgId: v.optional(v.id("organizations")),
     escortOrgId: v.optional(v.id("organizations")),
     status: v.union(
@@ -79,6 +80,8 @@ export default defineSchema({
     })),
   })
     .index("by_orgId", ["orgId"])
+    .index("by_createdBy", ["createdBy"])
+    .index("by_user_org", ["createdBy", "orgId"]) // User-scoped within org
     .index("by_carrier", ["carrierOrgId"])
     .index("by_status", ["status"])
     .index("by_shipper_available", ["orgId", "status"])

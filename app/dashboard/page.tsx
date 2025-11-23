@@ -13,9 +13,9 @@ export default function DashboardPage() {
   const { user } = useUser();
   const [convexTokenClaims, setConvexTokenClaims] = useState<any>(null);
 
-  const userProfile = useQuery(api.users.getUserProfile, {
-    clerkUserId: userId || undefined,
-  });
+  const userProfile = useQuery(api.users.getUserProfile,
+    userId ? { clerkUserId: userId } : "skip"
+  );
 
   const organization = useQuery(api.organizations.getOrganizationById,
     userProfile?.orgId ? { orgId: userProfile.orgId } : "skip"
@@ -82,73 +82,21 @@ export default function DashboardPage() {
   }
 
   if (organization === undefined) {
-    return <div>Loading organization data...</div>;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading organization...</p>
+        </div>
+      </div>
+    );
   }
 
   if (organization === null) {
     return (
-      <div className="p-4 border rounded bg-red-50 text-red-800 space-y-4">
-        <div>
-          <h3 className="font-bold">
-            Organization {(sessionClaims as any)?.org_name ? `'${(sessionClaims as any).org_name}'` : ""} not found in database
-          </h3>
-          {(sessionClaims as any)?.org_name ? (
-            <p className="text-xs text-green-600 mb-2">
-              ✓ Name retrieved from Clerk session claim 'org_name'
-            </p>
-          ) : (
-            <p className="text-xs text-red-600 mb-2">
-              ✕ Name not found in Clerk session claim 'org_name'
-            </p>
-          )}
-          <p>Please contact support.</p>
-          <p className="mt-2 text-sm text-muted-foreground">Org ID: {orgId}</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded border border-red-200 overflow-auto max-h-96">
-            <h4 className="font-semibold mb-1 text-sm">Session Claims (Next.js):</h4>
-            <p className="text-xs text-muted-foreground mb-2">Used by Middleware & App</p>
-            <pre className="text-xs whitespace-pre-wrap break-all">
-              {JSON.stringify(
-                Object.keys(sessionClaims || {}).filter(key => key !== '__raw').sort().reduce((obj: any, key) => {
-                  obj[key] = (sessionClaims as any)[key];
-                  return obj;
-                }, {}),
-                null,
-                2
-              )}
-            </pre>
-          </div>
-
-          <div className="bg-white p-4 rounded border border-red-200 overflow-auto max-h-96">
-            <h4 className="font-semibold mb-2 text-sm">Convex JWT Template:</h4>
-            <pre className="text-xs whitespace-pre-wrap break-all">
-              {convexTokenClaims ? JSON.stringify(
-                Object.keys(convexTokenClaims).sort().reduce((obj: any, key) => {
-                  obj[key] = convexTokenClaims[key];
-                  return obj;
-                }, {}),
-                null,
-                2
-              ) : "Loading..."}
-            </pre>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded border border-red-200 mt-4">
-          <h4 className="font-semibold mb-4 text-sm">Claims Checklist</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div>
-              <h5 className="text-xs font-medium mb-2 text-muted-foreground">Session Claims (Next.js)</h5>
-              <ClaimsChecklist claims={sessionClaims} />
-            </div>
-            <div>
-              <h5 className="text-xs font-medium mb-2 text-muted-foreground">Convex JWT Template</h5>
-              <ClaimsChecklist claims={convexTokenClaims} />
-            </div>
-          </div>
-        </div>
+      <div className="p-4 border rounded bg-red-50 text-red-800">
+        <h3 className="font-bold">Organization not found</h3>
+        <p className="mt-2">Your organization data could not be loaded. Please contact support.</p>
       </div>
     );
   }
