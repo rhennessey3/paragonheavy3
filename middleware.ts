@@ -10,7 +10,8 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up/tasks/create-organization(.*)',
   '/dashboard(.*)',
   '/api/webhooks(.*)',
-  '/api/onboarding-complete(.*)'
+  '/api/onboarding-complete(.*)',
+  '/invite(.*)'
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

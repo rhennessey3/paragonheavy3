@@ -5,12 +5,16 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { RoleManagement } from "./RoleManagement";
 import { LoadCreationModal } from "./LoadCreationModal";
+import { AssignOrganizationModal } from "./AssignOrganizationModal";
 import { Button } from "@/components/ui/button";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export function ShipperDashboard() {
   const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
   const [editingLoad, setEditingLoad] = useState<Id<"loads"> | null>(null);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assigningLoadId, setAssigningLoadId] = useState<Id<"loads"> | null>(null);
+  const [assignmentType, setAssignmentType] = useState<"carrier" | "escort">("carrier");
   const { userId } = useAuth();
   const { user } = useUser();
 
@@ -101,20 +105,17 @@ export function ShipperDashboard() {
                   <th className="text-left p-3 text-sm font-medium">Destination</th>
                   <th className="text-left p-3 text-sm font-medium">Status</th>
                   <th className="text-left p-3 text-sm font-medium">Pickup</th>
+                  <th className="text-left p-3 text-sm font-medium">Assigned To</th>
                   <th className="text-right p-3 text-sm font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loads.map((load) => (
-                  <tr key={load._id} className="border-t hover:bg-muted/50">
-                    <td className="p-3 text-sm font-mono">{load.loadNumber}</td>
-                    <td className="p-3 text-sm">
-                      {load.origin.city}, {load.origin.state}
-                    </td>
-                    <td className="p-3 text-sm">
-                      {load.destination.city}, {load.destination.state}
-                    </td>
-                    <td className="p-3 text-sm">
+                  <tr key={load._id} className="border-b">
+                    <td className="p-2 text-sm font-medium text-foreground">{load.loadNumber}</td>
+                    <td className="p-2 text-sm text-muted-foreground">{load.origin?.city}, {load.origin?.state}</td>
+                    <td className="p-2 text-sm text-muted-foreground">{load.destination?.city}, {load.destination?.state}</td>
+                    <td className="p-2 text-sm text-muted-foreground">
                       <span className={`px-2 py-1 rounded text-xs ${load.status === "draft" ? "bg-gray-100 text-gray-800" :
                         load.status === "available" ? "bg-blue-100 text-blue-800" :
                           load.status === "assigned" ? "bg-yellow-100 text-yellow-800" :
@@ -126,6 +127,7 @@ export function ShipperDashboard() {
                       </span>
                     </td>
                     <td className="p-3 text-sm">{formatDate(load.pickupDate)}</td>
+                    <td className="p-2 text-sm text-muted-foreground">{load.carrierOrgId ?? load.escortOrgId ?? 'Self'}</td>
                     <td className="p-3 text-sm text-right">
                       <Button
                         variant="outline"
@@ -156,6 +158,13 @@ export function ShipperDashboard() {
         }}
         orgType="shipper"
         editingLoadId={editingLoad}
+      />
+
+      <AssignOrganizationModal
+        isOpen={assignModalOpen}
+        onClose={() => setAssignModalOpen(false)}
+        loadId={assigningLoadId}
+        type={assignmentType}
       />
     </div>
   );

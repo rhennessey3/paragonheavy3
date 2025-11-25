@@ -109,23 +109,43 @@ export const getUserLoads = query({
     )),
   },
   handler: async (ctx, args) => {
-    // Get all loads for this organization
-    let loads = await ctx.db
+    // Get all loads for this organization (created by this org)
+    let ownLoads = await ctx.db
       .query("loads")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .collect();
 
     // Filter for user's loads OR loads without createdBy (legacy support)
-    loads = loads.filter(load =>
+    ownLoads = ownLoads.filter(load =>
       !load.createdBy || load.createdBy === args.userId
     );
 
+    // Get loads assigned to this organization as carrier
+    const carrierLoads = await ctx.db
+      .query("loads")
+      .withIndex("by_carrier", (q) => q.eq("carrierOrgId", args.orgId))
+      .collect();
+
+    // Get loads assigned to this organization as escort (no index, so filter manually)
+    const allLoads = await ctx.db.query("loads").collect();
+    const escortLoads = allLoads.filter(load => load.escortOrgId === args.orgId);
+
+    // Combine all loads and remove duplicates
+    const allLoadIds = new Set<string>();
+    const combinedLoads = [...ownLoads, ...carrierLoads, ...escortLoads].filter(load => {
+      if (allLoadIds.has(load._id)) {
+        return false;
+      }
+      allLoadIds.add(load._id);
+      return true;
+    });
+
     // Apply status filter if provided
     if (args.status) {
-      loads = loads.filter(load => load.status === args.status);
+      return combinedLoads.filter(load => load.status === args.status);
     }
 
-    return loads;
+    return combinedLoads;
   },
 });
 
@@ -166,6 +186,41 @@ export const getCarrierLoads = query({
 
     const loads = await query.collect();
     return loads;
+  },
+});
+
+export const assignLoadToOrganization = mutation({
+  args: {
+    loadId: v.id("loads"),
+    carrierOrgId: v.optional(v.id("organizations")),
+    escortOrgId: v.optional(v.id("organizations")),
+  },
+  handler: async (ctx, args) => {
+    const load = await ctx.db.get(args.loadId);
+    if (!load) {
+      throw new Error("Load not found");
+    }
+
+    const updates: any = {
+      updatedAt: Date.now(),
+    };
+
+    // Update carrier assignment
+    if (args.carrierOrgId !== undefined) {
+      updates.carrierOrgId = args.carrierOrgId;
+      // Auto-update status to "assigned" when carrier is assigned
+      if (args.carrierOrgId && load.status === "draft") {
+        updates.status = "available";
+      }
+    }
+
+    // Update escort assignment
+    if (args.escortOrgId !== undefined) {
+      updates.escortOrgId = args.escortOrgId;
+    }
+
+    await ctx.db.patch(args.loadId, updates);
+    return args.loadId;
   },
 });
 

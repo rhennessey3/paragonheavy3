@@ -86,4 +86,17 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_shipper_available", ["orgId", "status"])
     .index("by_carrier_assigned", ["carrierOrgId", "status"]),
+
+  invitations: defineTable({
+    email: v.string(),
+    orgId: v.id("organizations"),
+    role: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator")),
+    token: v.string(),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked")),
+    invitedBy: v.string(), // clerkUserId
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_orgId", ["orgId"])
+    .index("by_email", ["email"]),
 });

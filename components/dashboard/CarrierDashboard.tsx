@@ -3,13 +3,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { RoleManagement } from "./RoleManagement";
 import { LoadCreationModal } from "./LoadCreationModal";
 import { Button } from "@/components/ui/button";
+import { AssignOrganizationModal } from "./AssignOrganizationModal";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export function CarrierDashboard() {
   const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
   const [editingLoad, setEditingLoad] = useState<Id<"loads"> | null>(null);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assigningLoadId, setAssigningLoadId] = useState<Id<"loads"> | null>(null);
+  const [assignmentType, setAssignmentType] = useState<"carrier" | "escort">("carrier");
   const { userId } = useAuth();
 
   const userProfile = useQuery(api.users.getUserProfile,
@@ -64,6 +69,15 @@ export function CarrierDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Organization Members Section */}
+      {userProfile?.orgId && (
+        <RoleManagement
+          orgId={userProfile.orgId}
+          currentUserId={userId || ""}
+          currentUserRole={userProfile.role}
+        />
+      )}
 
       <div className="p-4 border rounded-lg bg-muted/10">
         <div className="flex items-center justify-between mb-4">
@@ -126,6 +140,26 @@ export function CarrierDashboard() {
                       >
                         Edit
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAssigningLoadId(load._id);
+                          setAssignmentType("carrier");
+                          setAssignModalOpen(true);
+                        }}>
+                        Assign Carrier
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAssigningLoadId(load._id);
+                          setAssignmentType("escort");
+                          setAssignModalOpen(true);
+                        }}>
+                        Assign Escort
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -145,6 +179,12 @@ export function CarrierDashboard() {
         }}
         orgType="carrier"
         editingLoadId={editingLoad}
+      />
+      <AssignOrganizationModal
+        isOpen={assignModalOpen}
+        onClose={() => setAssignModalOpen(false)}
+        loadId={assigningLoadId}
+        type={assignmentType}
       />
     </div>
   );

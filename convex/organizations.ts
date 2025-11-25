@@ -77,6 +77,20 @@ export const getOrganizationById = query({
   },
 });
 
+export const getOrganizationsByType = query({
+  args: {
+    type: v.union(v.literal("shipper"), v.literal("carrier"), v.literal("escort")),
+  },
+  handler: async (ctx, args) => {
+    const organizations = await ctx.db
+      .query("organizations")
+      .filter((q) => q.eq(q.field("type"), args.type))
+      .collect();
+
+    return organizations;
+  },
+});
+
 export const getUserOrganizations = query({
   args: {
     userId: v.optional(v.string()),

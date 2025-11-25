@@ -131,31 +131,25 @@ export async function POST(request: NextRequest) {
 
     console.log("🍪 Setting onboarding completion cookie for user:", userId);
 
-    // Step 4: Set the ph_onboarding_completed=true cookie
-    const cookieStore = cookies();
-    cookieStore.set("ph_onboarding_completed", "true", {
+    // Step 4: Prepare cookie options (will be set on response)
+    const cookieOptions = {
       httpOnly: true,
       path: "/",
-      sameSite: "lax",
+      sameSite: "lax" as const,
       secure: process.env.NODE_ENV === "production",
       maxAge: 60 * 60 * 24 * 365, // 1 year
-    });
+    };
 
-    console.log("✅ Onboarding completion cookie set successfully", {
+    console.log("✅ Onboarding completion cookie prepared", {
       userId,
       cookieSet: "ph_onboarding_completed=true",
-      cookieOptions: {
-        httpOnly: true,
-        path: "/",
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 60 * 60 * 24 * 365
-      },
+      cookieOptions,
       timestamp: new Date().toISOString()
     });
 
-    // DEBUG: Log all cookies being set
-    console.log("🍪 DEBUG: All cookies in response:", {
+    // DEBUG: Log all cookies being set (reading requires await in Next.js 15)
+    const cookieStore = await cookies();
+    console.log("🍪 DEBUG: All cookies in request:", {
       allCookies: cookieStore.getAll(),
       timestamp: new Date().toISOString()
     });
@@ -168,6 +162,9 @@ export async function POST(request: NextRequest) {
 
     // Create response with proper cookie handling
     const response = NextResponse.redirect(new URL("/dashboard", request.url), 303);
+
+    // Set the cookie on the response
+    response.cookies.set("ph_onboarding_completed", "true", cookieOptions);
 
     console.log("🍪 DEBUG: Response created with redirect", {
       redirectUrl: new URL("/dashboard", request.url).toString(),

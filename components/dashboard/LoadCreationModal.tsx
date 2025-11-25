@@ -95,36 +95,102 @@ export function LoadCreationModal({ isOpen, onClose, orgType, editingLoadId }: L
   }, [editingLoadData, user]);
 
   const handleAutofill = () => {
+    // Random data generators
+    const cities = [
+      { name: "Houston", state: "TX", zip: "77001" },
+      { name: "Los Angeles", state: "CA", zip: "90001" },
+      { name: "Chicago", state: "IL", zip: "60601" },
+      { name: "Phoenix", state: "AZ", zip: "85001" },
+      { name: "Dallas", state: "TX", zip: "75201" },
+      { name: "Miami", state: "FL", zip: "33101" },
+      { name: "Atlanta", state: "GA", zip: "30301" },
+      { name: "Seattle", state: "WA", zip: "98101" },
+      { name: "Denver", state: "CO", zip: "80201" },
+      { name: "Boston", state: "MA", zip: "02101" },
+    ];
+
+    const streets = [
+      "Industrial Parkway",
+      "Warehouse Drive",
+      "Commerce Boulevard",
+      "Freight Avenue",
+      "Logistics Lane",
+      "Distribution Center Rd",
+      "Cargo Way",
+      "Transport Street",
+    ];
+
+    const descriptions = [
+      "Heavy machinery on flatbed trailer",
+      "Construction equipment",
+      "Oversized industrial components",
+      "Steel beams and structural materials",
+      "Manufacturing equipment",
+      "Agricultural machinery",
+      "Mining equipment and parts",
+      "Industrial generators",
+    ];
+
+    const requirements = [
+      "Requires police escort. Oversize load permit needed.",
+      "Wide load - escort required for highway portions.",
+      "Height restriction - avoid tunnels and low bridges.",
+      "Fragile equipment - secure loading required.",
+      "Time-sensitive delivery - weekend delivery allowed.",
+      "Special handling - certified riggers required.",
+    ];
+
+    // Random number generators
+    const randomInt = (min: number, max: number) =>
+      Math.floor(Math.random() * (max - min + 1)) + min;
+
+    const randomFloat = (min: number, max: number, decimals: number = 1) =>
+      parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
+
+    const randomItem = <T,>(arr: T[]) => arr[randomInt(0, arr.length - 1)];
+
+    // Generate random cities
+    const origin = randomItem(cities);
+    let destination = randomItem(cities);
+    // Ensure destination is different from origin
+    while (destination.name === origin.name) {
+      destination = randomItem(cities);
+    }
+
+    // Random date range (1-14 days from now for pickup, +3-10 days for delivery)
     const today = new Date();
-    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const pickupDays = randomInt(1, 14);
+    const deliveryDays = pickupDays + randomInt(3, 10);
+    const pickupDate = new Date(today.getTime() + pickupDays * 24 * 60 * 60 * 1000);
+    const deliveryDate = new Date(today.getTime() + deliveryDays * 24 * 60 * 60 * 1000);
 
     setFormData({
       loadNumber: `${orgType?.toUpperCase()}-${Date.now()}`,
       origin: {
-        address: "123 Industrial Parkway",
-        city: "Houston",
-        state: "TX",
-        zip: "77001",
+        address: `${randomInt(100, 999)} ${randomItem(streets)}`,
+        city: origin.name,
+        state: origin.state,
+        zip: origin.zip,
       },
       destination: {
-        address: "456 Warehouse Drive",
-        city: "Los Angeles",
-        state: "CA",
-        zip: "90001",
+        address: `${randomInt(100, 999)} ${randomItem(streets)}`,
+        city: destination.name,
+        state: destination.state,
+        zip: destination.zip,
       },
       dimensions: {
-        height: 13.5,
-        width: 8.5,
-        length: 53,
-        weight: 45000,
-        description: "Heavy machinery on flatbed trailer",
+        height: randomFloat(8, 14, 1),
+        width: randomFloat(7, 12, 1),
+        length: randomFloat(40, 60, 0),
+        weight: randomInt(20000, 80000),
+        description: randomItem(descriptions),
       },
-      pickupDate: today.toISOString().split('T')[0],
-      deliveryDate: nextWeek.toISOString().split('T')[0],
-      specialRequirements: "Requires police escort in California. Oversize load permit needed.",
+      pickupDate: pickupDate.toISOString().split('T')[0],
+      deliveryDate: deliveryDate.toISOString().split('T')[0],
+      specialRequirements: randomItem(requirements),
       contactInfo: {
         name: user?.fullName || user?.username || "John Doe",
-        phone: "(555) 123-4567",
+        phone: `(555) ${randomInt(100, 999)}-${randomInt(1000, 9999)}`,
         email: user?.primaryEmailAddress?.emailAddress || "contact@example.com",
       },
     });
@@ -182,12 +248,23 @@ export function LoadCreationModal({ isOpen, onClose, orgType, editingLoadId }: L
   };
 
   const handleInputChange = (section: string, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: section === "dimensions" || section === "contactInfo"
-        ? { ...prev[section as keyof typeof prev], [field]: value }
-        : { ...prev, [field]: value }
-    }));
+    setFormData(prev => {
+      // If the field belongs to a nested section (dimensions or contactInfo), merge into that object
+      if (section === "dimensions" || section === "contactInfo") {
+        return {
+          ...prev,
+          [section]: {
+            ...(prev[section as keyof typeof prev] as any),
+            [field]: value,
+          },
+        };
+      }
+      // Otherwise, it's a top‑level field
+      return {
+        ...prev,
+        [field]: value,
+      };
+    });
   };
 
   if (!isOpen) return null;
