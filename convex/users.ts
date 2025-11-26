@@ -9,7 +9,19 @@ export const createUserProfile = mutation({
     orgId: v.id("organizations"),
     email: v.string(),
     name: v.string(),
-    role: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member")),
+    role: v.union(
+      v.literal("admin"),
+      v.literal("manager"),
+      v.literal("operator"),
+      v.literal("member"),
+      v.literal("dispatcher"),
+      v.literal("driver"),
+      v.literal("safety"),
+      v.literal("accounting"),
+      v.literal("escort"),
+      v.literal("planner"),
+      v.literal("ap")
+    ),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -84,7 +96,19 @@ export const updateUserProfile = mutation({
   args: {
     userProfileId: v.id("userProfiles"),
     name: v.optional(v.string()),
-    role: v.optional(v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member"))),
+    role: v.optional(v.union(
+      v.literal("admin"),
+      v.literal("manager"),
+      v.literal("operator"),
+      v.literal("member"),
+      v.literal("dispatcher"),
+      v.literal("driver"),
+      v.literal("safety"),
+      v.literal("accounting"),
+      v.literal("escort"),
+      v.literal("planner"),
+      v.literal("ap")
+    )),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -209,6 +233,57 @@ export const syncFromClerk = internalMutation({
   },
 });
 
+export const updateOrgMembership = internalMutation({
+  args: {
+    clerkUserId: v.string(),
+    clerkOrgId: v.string(),
+    orgRole: v.string(),
+  },
+  handler: async (ctx, args) => {
+    console.log("👥 updateOrgMembership called:", {
+      clerkUserId: args.clerkUserId,
+      clerkOrgId: args.clerkOrgId,
+      orgRole: args.orgRole,
+    });
+
+    // Find the user profile
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .first();
+
+    if (!userProfile) {
+      console.error("❌ User profile not found for clerkUserId:", args.clerkUserId);
+      throw new Error(`User profile not found for clerkUserId: ${args.clerkUserId}. This will trigger a retry.`);
+    }
+
+    // Find the organization
+    const organization = await ctx.db
+      .query("organizations")
+      .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .first();
+
+    if (!organization) {
+      console.error("❌ Organization not found for clerkOrgId:", args.clerkOrgId);
+      throw new Error(`Organization not found for clerkOrgId: ${args.clerkOrgId}. This will trigger a retry.`);
+    }
+
+    // Map Clerk role to our role system
+    const mappedRole = args.orgRole === "org:admin" ? "admin" : args.orgRole === "org:member" ? "member" : "operator";
+
+    // Update the user profile with org info
+    await ctx.db.patch(userProfile._id, {
+      clerkOrgId: args.clerkOrgId,
+      orgId: organization._id,
+      role: mappedRole,
+      lastActiveAt: Date.now(),
+    });
+
+    console.log("✅ Org membership updated successfully for user:", args.clerkUserId);
+    return userProfile._id;
+  },
+});
+
 export const deleteFromClerk = internalMutation({
   args: {
     clerkUserId: v.string(),
@@ -231,7 +306,19 @@ export const updateMemberRole = mutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.string(),
-    newRole: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator"), v.literal("member")),
+    newRole: v.union(
+      v.literal("admin"),
+      v.literal("manager"),
+      v.literal("operator"),
+      v.literal("member"),
+      v.literal("dispatcher"),
+      v.literal("driver"),
+      v.literal("safety"),
+      v.literal("accounting"),
+      v.literal("escort"),
+      v.literal("planner"),
+      v.literal("ap")
+    ),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);

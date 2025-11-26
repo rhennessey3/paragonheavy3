@@ -77,6 +77,7 @@ export function ShipperDashboard() {
           orgId={userProfile.orgId}
           currentUserId={userId || ""}
           currentUserRole={userProfile.role}
+          orgType="shipper"
         />
       )}
 

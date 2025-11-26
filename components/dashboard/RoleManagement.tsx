@@ -15,9 +15,10 @@ interface RoleManagementProps {
   orgId: Id<"organizations">;
   currentUserId: string;
   currentUserRole: string;
+  orgType: "shipper" | "carrier" | "escort";
 }
 
-export function RoleManagement({ orgId, currentUserId, currentUserRole }: RoleManagementProps) {
+export function RoleManagement({ orgId, currentUserId, currentUserRole, orgType }: RoleManagementProps) {
   const { toast } = useToast();
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -42,7 +43,7 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole }: RoleMa
       await updateMemberRole({
         orgId,
         userId,
-        newRole: newRole as "admin" | "manager" | "operator",
+        newRole: newRole as any,
       });
 
       toast({
@@ -88,6 +89,14 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole }: RoleMa
         return "bg-blue-100 text-blue-800 hover:bg-blue-100";
       case "operator":
         return "bg-green-100 text-green-800 hover:bg-green-100";
+      case "dispatcher":
+      case "driver":
+      case "safety":
+      case "accounting":
+      case "escort":
+      case "planner":
+      case "ap":
+        return "bg-purple-100 text-purple-800 hover:bg-purple-100";
       default:
         return "bg-gray-100 text-gray-800 hover:bg-gray-100";
     }
@@ -144,9 +153,37 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole }: RoleMa
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        {orgType !== "escort" && orgType !== "shipper" && (
+                          <>
+                            <SelectItem value="operator">Operator</SelectItem>
+                            <SelectItem value="manager">Manager</SelectItem>
+                          </>
+                        )}
                         <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="manager">Manager</SelectItem>
-                        <SelectItem value="operator">Operator</SelectItem>
+
+                        {orgType === "shipper" && (
+                          <>
+                            <SelectItem value="planner">Planner</SelectItem>
+                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                            <SelectItem value="ap">AP</SelectItem>
+                          </>
+                        )}
+
+                        {orgType === "carrier" && (
+                          <>
+                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                            <SelectItem value="driver">Driver</SelectItem>
+                            <SelectItem value="safety">Safety</SelectItem>
+                            <SelectItem value="accounting">Accounting</SelectItem>
+                            <SelectItem value="escort">Escort</SelectItem>
+                          </>
+                        )}
+                        {orgType === "escort" && (
+                          <>
+                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                            <SelectItem value="driver">Driver</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -198,6 +235,7 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole }: RoleMa
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
         orgId={orgId}
+        orgType={orgType}
       />
     </Card>
   );

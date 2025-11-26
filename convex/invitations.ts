@@ -6,7 +6,18 @@ export const createInvitation = mutation({
     args: {
         email: v.string(),
         orgId: v.id("organizations"),
-        role: v.union(v.literal("admin"), v.literal("manager"), v.literal("operator")),
+        role: v.union(
+            v.literal("admin"),
+            v.literal("manager"),
+            v.literal("operator"),
+            v.literal("dispatcher"),
+            v.literal("driver"),
+            v.literal("safety"),
+            v.literal("accounting"),
+            v.literal("escort"),
+            v.literal("planner"),
+            v.literal("ap")
+        ),
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
@@ -183,7 +194,7 @@ export const acceptInvitation = mutation({
                 email: identity.email!,
                 name: identity.name || identity.email!.split("@")[0],
                 orgId: invite.orgId,
-                role: invite.role as "admin" | "manager" | "operator",
+                role: invite.role as "admin" | "manager" | "operator" | "dispatcher" | "driver" | "safety" | "accounting" | "escort" | "planner" | "ap",
                 createdAt: now,
                 lastActiveAt: now,
                 emailVerified: identity.emailVerified,
@@ -198,7 +209,7 @@ export const acceptInvitation = mutation({
             // Update existing user profile with new org and role
             await ctx.db.patch(userProfile._id, {
                 orgId: invite.orgId,
-                role: invite.role as "admin" | "manager" | "operator",
+                role: invite.role as "admin" | "manager" | "operator" | "dispatcher" | "driver" | "safety" | "accounting" | "escort",
             });
         }
 

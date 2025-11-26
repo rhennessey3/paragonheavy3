@@ -76,6 +76,7 @@ export function EscortDashboard() {
           orgId={userProfile.orgId}
           currentUserId={userId || ""}
           currentUserRole={userProfile.role}
+          orgType="escort"
         />
       )}
       <div className="p-4 border rounded-lg bg-muted/10">

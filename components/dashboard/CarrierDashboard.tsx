@@ -76,6 +76,7 @@ export function CarrierDashboard() {
           orgId={userProfile.orgId}
           currentUserId={userId || ""}
           currentUserRole={userProfile.role}
+          orgType="carrier"
         />
       )}
 

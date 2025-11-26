@@ -6,6 +6,11 @@ import { Webhook } from "svix";
 
 const http = httpRouter();
 
+// DEPRECATED: This webhook handler has been replaced by Upstash Workflow
+// See app/api/webhooks/clerk/route.ts for the new implementation
+// Keeping this code commented for reference during migration
+
+/*
 http.route({
   path: "/clerk-webhook",
   method: "POST",
@@ -106,6 +111,7 @@ http.route({
     return new Response(null, { status: 200 });
   }),
 });
+*/
 
 async function validateRequest(req: Request): Promise<WebhookEvent | null> {
   const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
@@ -114,7 +120,7 @@ async function validateRequest(req: Request): Promise<WebhookEvent | null> {
     webhookSecretLength: webhookSecret?.length || 0,
     nodeEnv: process.env.NODE_ENV
   });
-  
+
   if (!webhookSecret) {
     console.error("❌ CLERK_WEBHOOK_SECRET not set");
     return null;
@@ -126,7 +132,7 @@ async function validateRequest(req: Request): Promise<WebhookEvent | null> {
     "svix-timestamp": req.headers.get("svix-timestamp")!,
     "svix-signature": req.headers.get("svix-signature")!,
   };
-  
+
   console.log("🔍 Webhook validation:", {
     hasSecret: !!webhookSecret,
     hasSvixId: !!svixHeaders["svix-id"],
@@ -135,7 +141,7 @@ async function validateRequest(req: Request): Promise<WebhookEvent | null> {
     payloadLength: payloadString.length,
     payloadPreview: payloadString.substring(0, 100) + "..."
   });
-  
+
   const wh = new Webhook(webhookSecret);
   try {
     const event = wh.verify(payloadString, svixHeaders) as unknown as WebhookEvent;

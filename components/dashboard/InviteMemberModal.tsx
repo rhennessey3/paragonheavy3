@@ -16,12 +16,15 @@ interface InviteMemberModalProps {
     isOpen: boolean;
     onClose: () => void;
     orgId: Id<"organizations">;
+    orgType: "shipper" | "carrier" | "escort";
 }
 
-export function InviteMemberModal({ isOpen, onClose, orgId }: InviteMemberModalProps) {
+export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMemberModalProps) {
     const { toast } = useToast();
     const [email, setEmail] = useState("");
-    const [role, setRole] = useState<"admin" | "manager" | "operator">("operator");
+    const [role, setRole] = useState<"admin" | "manager" | "operator" | "dispatcher" | "driver" | "safety" | "accounting" | "escort" | "planner" | "ap">(
+        orgType === "escort" ? "driver" : orgType === "shipper" ? "planner" : "operator"
+    );
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inviteLink, setInviteLink] = useState<string | null>(null);
     const [isCopied, setIsCopied] = useState(false);
@@ -102,9 +105,37 @@ export function InviteMemberModal({ isOpen, onClose, orgId }: InviteMemberModalP
                                     <SelectValue placeholder="Select a role" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="operator">Operator (Standard access)</SelectItem>
-                                    <SelectItem value="manager">Manager (Can edit settings)</SelectItem>
+                                    {orgType !== "escort" && orgType !== "shipper" && (
+                                        <>
+                                            <SelectItem value="operator">Operator (Standard access)</SelectItem>
+                                            <SelectItem value="manager">Manager (Can edit settings)</SelectItem>
+                                        </>
+                                    )}
                                     <SelectItem value="admin">Admin (Full access)</SelectItem>
+
+                                    {orgType === "shipper" && (
+                                        <>
+                                            <SelectItem value="planner">Planner</SelectItem>
+                                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                                            <SelectItem value="ap">AP (Accounts Payable)</SelectItem>
+                                        </>
+                                    )}
+
+                                    {orgType === "carrier" && (
+                                        <>
+                                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                                            <SelectItem value="driver">Driver</SelectItem>
+                                            <SelectItem value="safety">Safety</SelectItem>
+                                            <SelectItem value="accounting">Accounting</SelectItem>
+                                            <SelectItem value="escort">Escort</SelectItem>
+                                        </>
+                                    )}
+                                    {orgType === "escort" && (
+                                        <>
+                                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                                            <SelectItem value="driver">Driver</SelectItem>
+                                        </>
+                                    )}
                                 </SelectContent>
                             </Select>
                         </div>
