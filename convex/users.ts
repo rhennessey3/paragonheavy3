@@ -40,10 +40,9 @@ export const createUserProfile = mutation({
       role: args.role,
       createdAt: now,
       lastActiveAt: now,
-      onboardingCompleted: false,
     });
 
-    console.log("✅ User profile created with onboardingCompleted: false for clerkUserId:", args.clerkUserId);
+    console.log("✅ User profile created for clerkUserId:", args.clerkUserId);
     return userProfileId;
   },
 });
@@ -149,7 +148,7 @@ export const updateLastActive = mutation({
   },
 });
 
-export const syncFromClerk = internalMutation({
+export const syncFromClerk = mutation({
   args: {
     clerkUserId: v.string(),
     email: v.string(),
@@ -207,33 +206,38 @@ export const syncFromClerk = internalMutation({
             createdAt: now,
             lastActiveAt: now,
             emailVerified: args.emailVerified,
-            onboardingCompleted: false,
           });
-          console.log("✅ User profile created with onboardingCompleted: false for clerkUserId:", args.clerkUserId);
+          console.log("✅ User profile created for clerkUserId:", args.clerkUserId);
           return userProfileId;
         } else {
           console.log("❌ Organization not found for clerkOrgId:", args.orgId);
+          console.log("⚠️ Creating basic user profile without org - will be updated by membership webhook");
         }
       } else {
         console.log("⚠️ No orgId provided for user sync");
+        console.log("✅ Creating basic user profile - will be updated when user joins/creates org");
       }
 
-      // If user doesn't have an organization in Clerk, check if they are a member of any organizations in Convex
-      // This handles cases where user was added to an organization directly in Convex
-      const existingOrgs = await ctx.db
-        .query("organizations")
-        .collect();
-
-      console.log("📊 Total organizations in database:", existingOrgs.length);
-
-      // For now, we won't auto-create profiles without an organization
-      // User should be explicitly added to organizations
+      // Create a basic user profile without organization
+      // This will be updated later when the organizationMembership webhook fires
+      const now = Date.now();
+      const userProfileId = await ctx.db.insert("userProfiles", {
+        clerkUserId: args.clerkUserId,
+        email: args.email,
+        name: args.name,
+        role: "member", // Default role, will be updated by membership webhook
+        createdAt: now,
+        lastActiveAt: now,
+        emailVerified: args.emailVerified,
+      });
+      console.log("✅ Basic user profile created for clerkUserId:", args.clerkUserId);
+      return userProfileId;
     }
     return null;
   },
 });
 
-export const updateOrgMembership = internalMutation({
+export const updateOrgMembership = mutation({
   args: {
     clerkUserId: v.string(),
     clerkOrgId: v.string(),
@@ -284,7 +288,7 @@ export const updateOrgMembership = internalMutation({
   },
 });
 
-export const deleteFromClerk = internalMutation({
+export const deleteFromClerk = mutation({
   args: {
     clerkUserId: v.string(),
   },
@@ -392,7 +396,6 @@ export const markOnboardingCompleted = mutation({
     }
 
     await ctx.db.patch(userProfile._id, {
-      onboardingCompleted: true,
       orgId: args.orgId, // if you want to bind the user to that org
       lastActiveAt: Date.now(),
     });

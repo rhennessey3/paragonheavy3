@@ -4,7 +4,7 @@ const addRealData = internalMutation({
   args: {},
   handler: async (ctx) => {
     console.log("🔄 Adding real Clerk data to Convex...");
-    
+
     // Your real Clerk data
     const realData = {
       user: {
@@ -45,13 +45,12 @@ const addRealData = internalMutation({
       createdAt: now,
       lastActiveAt: now,
       emailVerified: true,
-      onboardingCompleted: false,
     });
-    console.log("✅ User profile created with onboardingCompleted: false:", userProfileId);
+    console.log("✅ User profile created:", userProfileId);
 
     console.log("🎉 Real data added successfully!");
     console.log("Now refresh your dashboard - it should work!");
-    
+
     return { success: true, orgId, message: "Real data synced" };
   },
 });

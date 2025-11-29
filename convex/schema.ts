@@ -41,7 +41,7 @@ export default defineSchema({
     createdAt: v.number(),
     lastActiveAt: v.optional(v.number()),
     emailVerified: v.optional(v.boolean()),
-    onboardingCompleted: v.boolean(),
+    onboardingCompleted: v.optional(v.boolean()), // Temporary for migration
   })
     .index("by_clerkUserId", ["clerkUserId"])
     .index("by_orgId", ["orgId"])
@@ -116,11 +116,13 @@ export default defineSchema({
       v.literal("ap")
     ),
     token: v.string(),
+    clerkInvitationId: v.optional(v.string()), // Link to Clerk invitation
     status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked")),
     invitedBy: v.string(), // clerkUserId
     createdAt: v.number(),
   })
     .index("by_token", ["token"])
     .index("by_orgId", ["orgId"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_clerkInvitationId", ["clerkInvitationId"]),
 });

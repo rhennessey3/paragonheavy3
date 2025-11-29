@@ -1,184 +1,115 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuth, clerkClient } from "@clerk/nextjs/server";
-import { cookies } from "next/headers";
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "../../../convex/_generated/api";
+import { auth, clerkClient } from "@clerk/nextjs/server";
+import { verifyToken } from "@clerk/backend";
 
 export async function POST(request: NextRequest) {
   console.log("🎯 /api/onboarding-complete POST request received", {
     timestamp: new Date().toISOString(),
-    headers: Object.fromEntries(request.headers.entries())
   });
 
   try {
-    const { userId } = getAuth(request);
+    const { userId } = await auth();
     console.log("🔐 Auth check:", {
       userId: userId ? "present" : "missing",
-      userIdValue: userId,
+      hasCookie: request.headers.has("cookie"),
+      cookieLength: request.headers.get("cookie")?.length || 0,
+      hasAuthHeader: request.headers.has("authorization"),
+      authHeaderLength: request.headers.get("authorization")?.length || 0,
+      secretKeyPrefix: process.env.CLERK_SECRET_KEY?.substring(0, 7) || "missing",
+      secretKeySuffix: process.env.CLERK_SECRET_KEY?.slice(-5) || "missing",
+      userAgent: request.headers.get("user-agent"),
       timestamp: new Date().toISOString()
     });
 
-    if (!userId) {
-      console.error("❌ Unauthorized: No userId found", {
-        timestamp: new Date().toISOString()
-      });
+    // Debug: Decode token to check issuer
+    const authHeader = request.headers.get("authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.split(" ")[1];
+        const parts = token.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1]));
+          console.log("🔍 Token Payload Debug:", {
+            iss: payload.iss,
+            azp: payload.azp,
+            sub: payload.sub,
+            exp: new Date(payload.exp * 1000).toISOString(),
+            iat: new Date(payload.iat * 1000).toISOString()
+          });
+        }
+      } catch (e) {
+        console.error("❌ Failed to decode token:", e);
+      }
+    }
+
+    let finalUserId = userId;
+
+    if (!finalUserId) {
+      console.error("❌ Unauthorized: No userId found via auth()");
+
+      // Debug: Try manual verification with backend SDK
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const token = authHeader.split(" ")[1];
+
+          const verified = await verifyToken(token, {
+            secretKey: process.env.CLERK_SECRET_KEY,
+          });
+
+          console.log("✅ Manual verification SUCCEEDED!", verified);
+
+          if (verified.sub) {
+            console.log("🔓 Bypassing auth() failure with manual verification");
+            finalUserId = verified.sub;
+          }
+
+        } catch (verifyError: any) {
+          console.error("🚨 Manual verification FAILED. Reason:", {
+            message: verifyError.message,
+            reason: verifyError.reason,
+            code: verifyError.code
+          });
+        }
+      }
+    }
+
+    if (!finalUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Parse request body to get organization details
-    let requestBody;
-    try {
-      requestBody = await request.json();
-      console.log("📋 Request body parsed successfully", {
-        body: requestBody,
-        timestamp: new Date().toISOString()
-      });
-    } catch (parseError) {
-      console.error("❌ Failed to parse request body", {
-        error: parseError,
-        timestamp: new Date().toISOString()
-      });
-      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-    }
+    const { orgId, orgType } = await request.json();
+    console.log("📋 Organization data:", { orgId, orgType });
 
-    const { orgId, orgName, orgType } = requestBody;
-    console.log("📋 Organization data:", {
-      orgId,
-      orgName,
-      orgType,
-      timestamp: new Date().toISOString()
-    });
-
-    if (!orgId || !orgName || !orgType) {
-      console.error("❌ Missing required organization fields", {
-        orgId: !!orgId,
-        orgName: !!orgName,
-        orgType: !!orgType,
-        timestamp: new Date().toISOString()
-      });
-      return NextResponse.json({ error: "Missing required fields: orgId, orgName and orgType" }, { status: 400 });
+    if (!orgId || !orgType) {
+      console.error("❌ Missing required fields");
+      return NextResponse.json({ error: "Missing required fields: orgId and orgType" }, { status: 400 });
     }
 
     if (!["shipper", "carrier", "escort"].includes(orgType)) {
-      console.error("❌ Invalid organization type", {
-        orgType,
-        validTypes: ["shipper", "carrier", "escort"],
-        timestamp: new Date().toISOString()
-      });
+      console.error("❌ Invalid organization type:", orgType);
       return NextResponse.json({ error: "Invalid organization type" }, { status: 400 });
     }
 
-    // Initialize Convex client
-    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    console.log("🏢 Updating organization metadata in Clerk...");
 
-    console.log("🏢 Updating organization metadata in Clerk...", {
-      orgId,
-      orgName,
-      orgType,
-      timestamp: new Date().toISOString()
-    });
-
-    // Step 1: Update the existing Clerk organization with type metadata
+    // Update the Clerk organization with type metadata
+    // This will trigger an organization.updated webhook which will sync to Convex
     const clerk = await clerkClient();
-    const clerkOrganization = await clerk.organizations.updateOrganization(orgId, {
+    await clerk.organizations.updateOrganization(orgId, {
       publicMetadata: {
         type: orgType,
       },
     });
 
-    console.log("✅ Clerk organization updated successfully:", {
-      id: clerkOrganization.id,
-      name: clerkOrganization.name,
-      metadata: clerkOrganization.publicMetadata,
-      timestamp: new Date().toISOString()
-    });
+    console.log("✅ Clerk organization updated successfully");
 
-    console.log("💾 Creating organization record in Convex...", {
-      clerkOrgId: clerkOrganization.id,
-      orgName,
-      orgType,
-      createdBy: userId,
-      timestamp: new Date().toISOString()
-    });
-
-    // Step 2: Create the Convex org record
-    const convexOrgId = await convex.mutation(api.organizations.createOrganization, {
-      name: orgName,
-      type: orgType,
-    });
-
-    console.log("✅ Convex organization record created successfully:", {
-      convexOrgId,
-      clerkOrgId: clerkOrganization.id,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log("👤 Marking onboarding as completed in Convex...", {
-      userId,
-      timestamp: new Date().toISOString()
-    });
-
-    // Step 3: Mark onboardingCompleted = true in Convex
-    await convex.mutation(api.users.markOnboardingCompleted, {
-      clerkUserId: userId,
-      orgId: convexOrgId,
-    });
-
-    console.log("✅ Onboarding marked as completed in Convex", {
-      userId,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log("🍪 Setting onboarding completion cookie for user:", userId);
-
-    // Step 4: Prepare cookie options (will be set on response)
-    const cookieOptions = {
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax" as const,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 365, // 1 year
-    };
-
-    console.log("✅ Onboarding completion cookie prepared", {
-      userId,
-      cookieSet: "ph_onboarding_completed=true",
-      cookieOptions,
-      timestamp: new Date().toISOString()
-    });
-
-    // DEBUG: Log all cookies being set (reading requires await in Next.js 15)
-    const cookieStore = await cookies();
-    console.log("🍪 DEBUG: All cookies in request:", {
-      allCookies: cookieStore.getAll(),
-      timestamp: new Date().toISOString()
-    });
-
-    // Step 5: Redirect the user to /dashboard
-    console.log("🔄 Redirecting user to /dashboard...", {
-      userId,
-      timestamp: new Date().toISOString()
-    });
-
-    // Create response with proper cookie handling
-    const response = NextResponse.redirect(new URL("/dashboard", request.url), 303);
-
-    // Set the cookie on the response
-    response.cookies.set("ph_onboarding_completed", "true", cookieOptions);
-
-    console.log("🍪 DEBUG: Response created with redirect", {
-      redirectUrl: new URL("/dashboard", request.url).toString(),
-      responseHeaders: Object.fromEntries(response.headers.entries()),
-      timestamp: new Date().toISOString()
-    });
-
-    return response;
+    // Return success JSON so client can handle navigation
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("❌ Error in /api/onboarding-complete:", {
-      error: error,
-      errorMessage: error instanceof Error ? error.message : "Unknown error",
-      errorStack: error instanceof Error ? error.stack : undefined,
-      timestamp: new Date().toISOString()
+      error: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
     });
     return NextResponse.json(
       { error: "Failed to complete onboarding" },

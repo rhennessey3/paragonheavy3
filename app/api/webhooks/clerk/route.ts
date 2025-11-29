@@ -1,232 +1,83 @@
-import { serve } from "@upstash/workflow/nextjs";
 import { Webhook } from "svix";
-import type { WebhookEvent } from "@clerk/backend";
+import { headers } from "next/headers";
+import { WebhookEvent } from "@clerk/nextjs/server";
+import { Client } from "@upstash/qstash";
 
-const webhookSecret = process.env.CLERK_WEBHOOK_SECRET!;
+export async function POST(req: Request) {
+    const SIGNING_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
-async function validateRequest(
-    payloadString: string,
-    headerPayload: Headers
-): Promise<WebhookEvent | null> {
-    if (!webhookSecret) {
-        console.error("❌ CLERK_WEBHOOK_SECRET not set");
-        return null;
+    if (!SIGNING_SECRET) {
+        throw new Error("Error: Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local");
     }
 
-    const svixHeaders = {
-        "svix-id": headerPayload.get("svix-id")!,
-        "svix-timestamp": headerPayload.get("svix-timestamp")!,
-        "svix-signature": headerPayload.get("svix-signature")!,
-    };
+    // Create new Svix instance with secret
+    const wh = new Webhook(SIGNING_SECRET);
 
-    const wh = new Webhook(webhookSecret);
-    try {
-        const event = wh.verify(payloadString, svixHeaders) as unknown as WebhookEvent;
-        console.log("✅ Webhook signature verified for event:", event.type);
-        return event;
-    } catch (error) {
-        console.error("❌ Error verifying webhook event:", {
-            error: error instanceof Error ? error.message : String(error),
+    // Get headers
+    const headerPayload = await headers();
+    const svix_id = headerPayload.get("svix-id");
+    const svix_timestamp = headerPayload.get("svix-timestamp");
+    const svix_signature = headerPayload.get("svix-signature");
+
+    // If there are no headers, error out
+    if (!svix_id || !svix_timestamp || !svix_signature) {
+        return new Response("Error: Missing Svix headers", {
+            status: 400,
         });
-        return null;
+    }
+
+    // Get body
+    const payloadString = await req.text();
+
+    console.log("Webhook Debug:", {
+        svix_id,
+        svix_timestamp,
+        svix_signature,
+        payloadLength: payloadString.length,
+        secretLength: SIGNING_SECRET.length,
+        secretStart: SIGNING_SECRET.substring(0, 5)
+    });
+
+    let evt: WebhookEvent;
+
+    // Verify payload with headers
+    try {
+        evt = wh.verify(payloadString, {
+            "svix-id": svix_id,
+            "svix-timestamp": svix_timestamp,
+            "svix-signature": svix_signature,
+        }) as WebhookEvent;
+    } catch (err) {
+        console.error("Error: Could not verify webhook:", err);
+        return new Response("Error: Verification error", {
+            status: 400,
+        });
+    }
+
+    // Initialize QStash client
+    const client = new Client({ token: process.env.QSTASH_TOKEN! });
+
+    // Construct the workflow URL
+    // In production, this should be your production URL.
+    // In development with ngrok, we can use the host header.
+    let workflowUrl = process.env.UPSTASH_WORKFLOW_URL;
+    if (!workflowUrl) {
+        const host = headerPayload.get("host");
+        const protocol = host?.includes("localhost") ? "http" : "https";
+        workflowUrl = `${protocol}://${host}`;
+    }
+    workflowUrl = `${workflowUrl}/api/workflows/clerk`;
+
+    console.log(`🚀 Triggering workflow at ${workflowUrl} for event: ${evt.type}`);
+
+    try {
+        await client.publishJSON({
+            url: workflowUrl,
+            body: evt,
+        });
+        return new Response("Webhook received and workflow triggered", { status: 200 });
+    } catch (error) {
+        console.error("❌ Failed to trigger workflow:", error);
+        return new Response("Failed to trigger workflow", { status: 500 });
     }
 }
-
-export const { POST } = serve<string>(
-    async (context) => {
-        const payloadString = context.requestPayload;
-        const headerPayload = context.headers;
-
-        // Validate the webhook
-        const event = await context.run("validate-webhook", async () => {
-            return await validateRequest(payloadString, headerPayload);
-        });
-
-        if (!event) {
-            console.log("❌ Webhook validation failed");
-            return;
-        }
-
-        console.log("✅ Processing webhook event:", event.type);
-
-        // Handle different event types
-        switch (event.type) {
-            case "user.created":
-            case "user.updated": {
-                await context.run("sync-user-to-convex", async () => {
-                    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
-
-                    console.log(`👤 ${event.type}:`, {
-                        clerkUserId: event.data.id,
-                        email: event.data.email_addresses?.[0]?.email_address,
-                        name: `${event.data.first_name || ""} ${event.data.last_name || ""}`.trim(),
-                    });
-
-                    const response = await fetch(`${convexUrl}/api/run`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            path: "users:syncFromClerk",
-                            args: {
-                                clerkUserId: event.data.id!,
-                                email: event.data.email_addresses?.[0]?.email_address || "",
-                                name: `${event.data.first_name || ""} ${event.data.last_name || ""}`.trim() || event.data.username || "",
-                                imageUrl: event.data.image_url,
-                                orgId: event.data.organization_memberships?.[0]?.organization?.id,
-                                orgRole: event.data.organization_memberships?.[0]?.role,
-                                emailVerified: event.data.email_addresses?.[0]?.verification?.status === "verified",
-                            },
-                            format: "json",
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Failed to sync user: ${response.statusText}`);
-                    }
-
-                    console.log(`✅ User sync completed for ${event.data.id}`);
-                });
-                break;
-            }
-
-            case "organizationMembership.created":
-            case "organizationMembership.updated": {
-                await context.run("update-org-membership", async () => {
-                    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
-
-                    console.log(`👥 ${event.type}:`, {
-                        clerkUserId: event.data.public_user_data?.user_id,
-                        orgId: event.data.organization?.id,
-                        role: event.data.role,
-                    });
-
-                    const response = await fetch(`${convexUrl}/api/run`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            path: "users:updateOrgMembership",
-                            args: {
-                                clerkUserId: event.data.public_user_data?.user_id!,
-                                clerkOrgId: event.data.organization?.id!,
-                                orgRole: event.data.role,
-                            },
-                            format: "json",
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error(`❌ Failed to update org membership: ${errorText}`);
-                        // Throw to trigger Upstash retry
-                        throw new Error(`Failed to update org membership: ${response.statusText}`);
-                    }
-
-                    console.log(`✅ Org membership updated for user ${event.data.public_user_data?.user_id}`);
-                });
-                break;
-            }
-
-            case "organization.created":
-            case "organization.updated": {
-                await context.run("sync-organization-to-convex", async () => {
-                    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
-
-                    console.log(`🏢 ${event.type}:`, {
-                        clerkOrgId: event.data.id,
-                        name: event.data.name,
-                        createdBy: event.data.created_by,
-                    });
-
-                    const response = await fetch(`${convexUrl}/api/run`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            path: "organizations:syncFromClerk",
-                            args: {
-                                clerkOrgId: event.data.id!,
-                                name: event.data.name,
-                                createdBy: event.data.created_by,
-                            },
-                            format: "json",
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Failed to sync organization: ${response.statusText}`);
-                    }
-
-                    console.log(`✅ Organization sync completed for ${event.data.id}`);
-                });
-                break;
-            }
-
-            case "user.deleted": {
-                await context.run("delete-user-from-convex", async () => {
-                    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
-
-                    const response = await fetch(`${convexUrl}/api/run`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            path: "users:deleteFromClerk",
-                            args: {
-                                clerkUserId: event.data.id!,
-                            },
-                            format: "json",
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Failed to delete user: ${response.statusText}`);
-                    }
-
-                    console.log(`✅ User deleted: ${event.data.id}`);
-                });
-                break;
-            }
-
-            case "organization.deleted": {
-                await context.run("delete-organization-from-convex", async () => {
-                    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
-
-                    const response = await fetch(`${convexUrl}/api/run`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            path: "organizations:deleteFromClerk",
-                            args: {
-                                clerkOrgId: event.data.id!,
-                            },
-                            format: "json",
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Failed to delete organization: ${response.statusText}`);
-                    }
-
-                    console.log(`✅ Organization deleted: ${event.data.id}`);
-                });
-                break;
-            }
-
-            default:
-                console.log("Ignored Clerk webhook event:", event.type);
-        }
-    },
-    {
-        initialPayloadParser: (payload) => {
-            return payload;
-        },
-    }
-);

@@ -91,9 +91,8 @@ export const createSampleData = mutation({
         role: "admin",
         createdAt: Date.now(),
         lastActiveAt: Date.now(),
-        onboardingCompleted: false,
       });
-      console.log(`DEBUG: Created sample user profile with onboardingCompleted: false: ${userProfileId}`);
+      console.log(`DEBUG: Created sample user profile: ${userProfileId}`);
 
       // Create sample load
       const loadId = await ctx.db.insert("loads", {

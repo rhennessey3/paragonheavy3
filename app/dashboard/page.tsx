@@ -9,8 +9,9 @@ import { EscortDashboard } from "@/components/dashboard/EscortDashboard";
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-  const { userId, getToken, sessionClaims } = useAuth();
+  const { getToken } = useAuth();
   const { user } = useUser();
+  const userId = user?.id;
   const [convexTokenClaims, setConvexTokenClaims] = useState<any>(null);
 
   const userProfile = useQuery(api.users.getUserProfile,

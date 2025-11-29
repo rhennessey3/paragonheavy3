@@ -25,19 +25,16 @@ export default function RootLayout({
           card: "shadow-lg",
         },
       }}
-      // Prevent Clerk from showing organization creation UI
-      signInForceRedirectUrl="/sign-up/tasks/create-organization"
-      signUpForceRedirectUrl="/sign-up/tasks/create-organization"
     >
-      <ConvexClientProvider>
-        <html lang="en">
-          <body className={inter.className}>
+      <html lang="en">
+        <body className={inter.className}>
+          <ConvexClientProvider>
             {children}
             <Toaster />
             <DebugAuthInfo />
-          </body>
-        </html>
-      </ConvexClientProvider>
+          </ConvexClientProvider>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }

@@ -1,8 +1,23 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Create a new invitation
-export const createInvitation = mutation({
+// Helper to require authentication
+async function requireAuth(ctx: any) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const userProfile = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_clerkUserId", (q: any) => q.eq("clerkUserId", identity.subject))
+        .first();
+
+    if (!userProfile) throw new Error("User profile not found");
+
+    return { identity, userProfile };
+}
+
+// Create invitation for hybrid Clerk approach
+export const createInvitationWithClerk = mutation({
     args: {
         email: v.string(),
         orgId: v.id("organizations"),
@@ -10,6 +25,7 @@ export const createInvitation = mutation({
             v.literal("admin"),
             v.literal("manager"),
             v.literal("operator"),
+            v.literal("member"),
             v.literal("dispatcher"),
             v.literal("driver"),
             v.literal("safety"),
@@ -20,19 +36,34 @@ export const createInvitation = mutation({
         ),
     },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Unauthorized");
+        const { userProfile } = await requireAuth(ctx);
+
+        // Verify admin permission
+        if (userProfile.role !== "admin") {
+            throw new Error("Only admins can invite users");
         }
 
-        // Verify the inviter is an admin of the organization
-        const userProfile = await ctx.db
-            .query("userProfiles")
-            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
-            .first();
+        // Verify user belongs to org
+        if (userProfile.orgId !== args.orgId) {
+            throw new Error("Access denied");
+        }
 
-        if (!userProfile || userProfile.orgId !== args.orgId || userProfile.role !== "admin") {
-            throw new Error("Only admins can invite members");
+        const org = await ctx.db.get(args.orgId);
+        if (!org) {
+            throw new Error("Organization not found");
+        }
+
+        let clerkOrgId = org.clerkOrgId;
+
+        // Self-healing: If org is missing clerkOrgId, try to recover it from user profile
+        if (!clerkOrgId && userProfile.clerkOrgId) {
+            console.log(`🛠️ Self-healing: Recovering clerkOrgId ${userProfile.clerkOrgId} for org ${args.orgId}`);
+            clerkOrgId = userProfile.clerkOrgId;
+            await ctx.db.patch(args.orgId, { clerkOrgId });
+        }
+
+        if (!clerkOrgId) {
+            throw new Error("Organization not found (missing Clerk ID)");
         }
 
         // Check for existing pending invitation
@@ -47,7 +78,7 @@ export const createInvitation = mutation({
             throw new Error("Pending invitation already exists for this email");
         }
 
-        // Check if user is already a member of the organization
+        // Check if user is already a member
         const existingMember = await ctx.db
             .query("userProfiles")
             .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
@@ -58,20 +89,65 @@ export const createInvitation = mutation({
             throw new Error("User is already a member of this organization");
         }
 
-        // Generate a simple random token
-        const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        // Generate token (still used for internal tracking)
+        const token = Math.random().toString(36).substring(2, 15) +
+            Math.random().toString(36).substring(2, 15);
 
+        // Create invitation (clerkInvitationId will be added by client)
         const inviteId = await ctx.db.insert("invitations", {
             email: args.email,
             orgId: args.orgId,
             role: args.role,
             token,
             status: "pending",
-            invitedBy: identity.subject,
+            invitedBy: userProfile.clerkUserId,
             createdAt: Date.now(),
         });
 
-        return { inviteId, token };
+        return { inviteId, clerkOrgId };
+    },
+});
+
+// Link Clerk invitation ID after Clerk API call
+export const linkClerkInvitation = mutation({
+    args: {
+        inviteId: v.id("invitations"),
+        clerkInvitationId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.inviteId, {
+            clerkInvitationId: args.clerkInvitationId,
+        });
+    },
+});
+
+// Get invitation by Clerk ID (for webhook processing)
+export const getByClerkId = query({
+    args: { clerkInvitationId: v.string() },
+    handler: async (ctx, args) => {
+        return await ctx.db
+            .query("invitations")
+            .withIndex("by_clerkInvitationId", (q) =>
+                q.eq("clerkInvitationId", args.clerkInvitationId)
+            )
+            .first();
+    },
+});
+
+// Mark invitation as accepted
+export const markAccepted = mutation({
+    args: { clerkInvitationId: v.string() },
+    handler: async (ctx, args) => {
+        const invite = await ctx.db
+            .query("invitations")
+            .withIndex("by_clerkInvitationId", (q) =>
+                q.eq("clerkInvitationId", args.clerkInvitationId)
+            )
+            .first();
+
+        if (invite) {
+            await ctx.db.patch(invite._id, { status: "accepted" });
+        }
     },
 });
 
@@ -89,7 +165,7 @@ export const getOrgInvitations = query({
         // Verify user belongs to the org
         const userProfile = await ctx.db
             .query("userProfiles")
-            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
+            .withIndex("by_clerkUserId", (q: any) => q.eq("clerkUserId", identity.subject))
             .first();
 
         if (!userProfile || userProfile.orgId !== args.orgId) {
@@ -110,10 +186,7 @@ export const revokeInvitation = mutation({
         invitationId: v.id("invitations"),
     },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Unauthorized");
-        }
+        const { userProfile } = await requireAuth(ctx);
 
         const invite = await ctx.db.get(args.invitationId);
         if (!invite) {
@@ -121,103 +194,12 @@ export const revokeInvitation = mutation({
         }
 
         // Verify revoker is admin of the org
-        const userProfile = await ctx.db
-            .query("userProfiles")
-            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
-            .first();
-
-        if (!userProfile || userProfile.orgId !== invite.orgId || userProfile.role !== "admin") {
+        if (userProfile.orgId !== invite.orgId || userProfile.role !== "admin") {
             throw new Error("Only admins can revoke invitations");
         }
 
         await ctx.db.patch(args.invitationId, {
             status: "revoked",
         });
-    },
-});
-
-// Get invitation details by token (publicly accessible for landing page)
-export const getInvitationByToken = query({
-    args: {
-        token: v.string(),
-    },
-    handler: async (ctx, args) => {
-        const invite = await ctx.db
-            .query("invitations")
-            .withIndex("by_token", (q) => q.eq("token", args.token))
-            .first();
-
-        if (!invite || invite.status !== "pending") {
-            return null;
-        }
-
-        const org = await ctx.db.get(invite.orgId);
-
-        return {
-            ...invite,
-            orgName: org?.name,
-        };
-    },
-});
-
-// Accept an invitation
-export const acceptInvitation = mutation({
-    args: {
-        token: v.string(),
-    },
-    handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Unauthorized");
-        }
-
-        const invite = await ctx.db
-            .query("invitations")
-            .withIndex("by_token", (q) => q.eq("token", args.token))
-            .first();
-
-        if (!invite || invite.status !== "pending") {
-            throw new Error("Invalid or expired invitation");
-        }
-
-        // Get the user profile
-        let userProfile = await ctx.db
-            .query("userProfiles")
-            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
-            .first();
-
-        if (!userProfile) {
-            // Create new user profile if it doesn't exist
-            const now = Date.now();
-            await ctx.db.insert("userProfiles", {
-                clerkUserId: identity.subject,
-                email: identity.email!,
-                name: identity.name || identity.email!.split("@")[0],
-                orgId: invite.orgId,
-                role: invite.role as "admin" | "manager" | "operator" | "dispatcher" | "driver" | "safety" | "accounting" | "escort" | "planner" | "ap",
-                createdAt: now,
-                lastActiveAt: now,
-                emailVerified: identity.emailVerified,
-                onboardingCompleted: true, // Skip onboarding for invited users
-            });
-        } else {
-            // Check if user is already in this organization
-            if (userProfile.orgId === invite.orgId) {
-                throw new Error("You are already a member of this organization");
-            }
-
-            // Update existing user profile with new org and role
-            await ctx.db.patch(userProfile._id, {
-                orgId: invite.orgId,
-                role: invite.role as "admin" | "manager" | "operator" | "dispatcher" | "driver" | "safety" | "accounting" | "escort",
-            });
-        }
-
-        // Mark invitation as accepted
-        await ctx.db.patch(invite._id, {
-            status: "accepted",
-        });
-
-        return invite.orgId;
     },
 });

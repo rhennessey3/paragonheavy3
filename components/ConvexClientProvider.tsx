@@ -28,8 +28,6 @@ console.log = (...args) => {
 };
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
-  const auth = useAuth();
-
   return (
     <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
       {children}

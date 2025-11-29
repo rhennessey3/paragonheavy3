@@ -10,6 +10,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up/tasks/create-organization(.*)',
   '/dashboard(.*)',
   '/api/webhooks(.*)',
+  '/api/workflows(.*)',
   '/api/onboarding-complete(.*)',
   '/invite(.*)'
 ]);
@@ -34,7 +35,9 @@ export default clerkMiddleware(async (auth, req) => {
       userId
     });
     const signInUrl = new URL("/sign-in", req.url);
-    return NextResponse.redirect(signInUrl);
+    // return NextResponse.redirect(signInUrl); // DISABLE REDIRECT FOR DEBUGGING
+    console.log("🔒 Middleware: Would redirect to sign-in, but disabled for debugging");
+    return NextResponse.next();
   }
 
   return NextResponse.next();

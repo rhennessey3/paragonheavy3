@@ -196,6 +196,7 @@ export default function SignUpPage() {
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? "Creating account..." : "Sign Up"}
             </Button>
+            <div id="clerk-captcha" />
           </form>
         </CardContent>
       </Card>
