@@ -217,9 +217,14 @@ export const syncFromClerk = mutation({
       });
 
       const now = Date.now();
+      // Use the provided type if valid, otherwise default to "shipper"
+      const orgType = args.type && ["shipper", "carrier", "escort"].includes(args.type)
+        ? args.type as "shipper" | "carrier" | "escort"
+        : "shipper";
+      
       const orgId = await ctx.db.insert("organizations", {
         name: args.name,
-        type: "shipper", // Default type, can be updated later
+        type: orgType,
         clerkOrgId: args.clerkOrgId,
         createdBy: args.createdBy || "",
         createdAt: now,

@@ -363,12 +363,52 @@ export const getOrganizationMembers = query({
     orgId: v.id("organizations"),
   },
   handler: async (ctx, args) => {
-    const members = await ctx.db
+    // Get organization to find clerkOrgId
+    const org = await ctx.db.get(args.orgId);
+    if (!org) {
+      return [];
+    }
+
+    // Get members by internal orgId
+    const membersByOrgId = await ctx.db
       .query("userProfiles")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .collect();
 
-    return members;
+    // Also get members by clerkOrgId as fallback (in case orgId wasn't set properly)
+    let membersByClerkOrgId: any[] = [];
+    if (org.clerkOrgId) {
+      membersByClerkOrgId = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", org.clerkOrgId))
+        .collect();
+    }
+
+    // Merge and deduplicate
+    const allMembers = [...membersByOrgId];
+    const existingIds = new Set(membersByOrgId.map((m) => m._id.toString()));
+    
+    for (const member of membersByClerkOrgId) {
+      if (!existingIds.has(member._id.toString())) {
+        allMembers.push(member);
+      }
+    }
+
+    return allMembers;
+  },
+});
+
+// Sync a member's orgId if they have clerkOrgId but missing orgId
+export const syncMemberOrgId = mutation({
+  args: {
+    userProfileId: v.id("userProfiles"),
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userProfileId, {
+      orgId: args.orgId,
+    });
+    return args.userProfileId;
   },
 });
 

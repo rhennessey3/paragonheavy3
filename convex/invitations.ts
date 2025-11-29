@@ -145,7 +145,7 @@ export const markAccepted = mutation({
     },
 });
 
-// Get pending invitations for an organization
+// Get all invitations for an organization (pending, accepted, revoked)
 export const getOrgInvitations = query({
     args: {
         orgId: v.id("organizations"),
@@ -166,11 +166,29 @@ export const getOrgInvitations = query({
             return [];
         }
 
-        return await ctx.db
+        // Get all invitations (not filtered by status)
+        const invitations = await ctx.db
             .query("invitations")
             .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
-            .filter((q) => q.eq(q.field("status"), "pending"))
+            .order("desc")
             .collect();
+
+        // Enrich with inviter information
+        const enrichedInvitations = await Promise.all(
+            invitations.map(async (invite) => {
+                const inviter = await ctx.db
+                    .query("userProfiles")
+                    .withIndex("by_clerkUserId", (q: any) => q.eq("clerkUserId", invite.invitedBy))
+                    .first();
+
+                return {
+                    ...invite,
+                    inviterName: inviter?.name || "Unknown",
+                };
+            })
+        );
+
+        return enrichedInvitations;
     },
 });
 
@@ -230,8 +248,18 @@ export const getInvitationByToken = query({
 export const acceptInvitation = mutation({
     args: { token: v.string() },
     handler: async (ctx, args) => {
+        console.log("🎫 acceptInvitation called with token:", args.token.substring(0, 8) + "...");
+        
         const identity = await ctx.auth.getUserIdentity();
-        if (!identity) throw new Error("Unauthorized");
+        if (!identity) {
+            console.log("❌ acceptInvitation: No identity found - user not authenticated");
+            throw new Error("Unauthorized");
+        }
+        
+        console.log("👤 acceptInvitation: User identity found:", {
+            subject: identity.subject,
+            email: identity.email,
+        });
 
         const invite = await ctx.db
             .query("invitations")
@@ -239,20 +267,70 @@ export const acceptInvitation = mutation({
             .first();
 
         if (!invite || invite.status !== "pending") {
+            console.log("❌ acceptInvitation: Invalid/expired invitation:", {
+                inviteFound: !!invite,
+                status: invite?.status,
+            });
             throw new Error("Invalid or expired invitation");
         }
+        
+        console.log("✅ acceptInvitation: Invitation found:", {
+            inviteId: invite._id,
+            email: invite.email,
+            orgId: invite.orgId,
+            role: invite.role,
+        });
 
         const org = await ctx.db.get(invite.orgId);
-        if (!org) throw new Error("Organization not found");
+        if (!org) {
+            console.log("❌ acceptInvitation: Organization not found:", invite.orgId);
+            throw new Error("Organization not found");
+        }
+        
+        console.log("✅ acceptInvitation: Organization found:", {
+            orgId: org._id,
+            name: org.name,
+            clerkOrgId: org.clerkOrgId,
+        });
 
-        const userProfile = await ctx.db
+        let userProfile = await ctx.db
             .query("userProfiles")
             .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
             .first();
 
         if (!userProfile) {
-            throw new Error("User profile not found");
+            console.log("⚠️ acceptInvitation: User profile NOT found for clerkUserId:", identity.subject);
+            console.log("🔧 Creating user profile on-demand for invited user...");
+            
+            // Create user profile on-demand if webhook hasn't processed yet
+            const now = Date.now();
+            const userProfileId = await ctx.db.insert("userProfiles", {
+                clerkUserId: identity.subject,
+                email: identity.email || invite.email,
+                name: identity.name || identity.email?.split("@")[0] || "Unknown",
+                role: invite.role,
+                orgId: invite.orgId,
+                clerkOrgId: org.clerkOrgId,
+                createdAt: now,
+                lastActiveAt: now,
+            });
+            
+            console.log("✅ acceptInvitation: User profile created on-demand:", userProfileId);
+            
+            // Mark invitation as accepted
+            await ctx.db.patch(invite._id, {
+                status: "accepted",
+            });
+            
+            console.log("✅ acceptInvitation: Invitation marked as accepted");
+            return { orgId: invite.orgId };
         }
+
+        console.log("✅ acceptInvitation: Existing user profile found:", {
+            profileId: userProfile._id,
+            existingOrgId: userProfile.orgId,
+            existingRole: userProfile.role,
+        });
 
         // Update user profile
         await ctx.db.patch(userProfile._id, {
@@ -260,11 +338,15 @@ export const acceptInvitation = mutation({
             role: invite.role,
             clerkOrgId: org.clerkOrgId,
         });
+        
+        console.log("✅ acceptInvitation: User profile updated with org info");
 
         // Mark invitation as accepted
         await ctx.db.patch(invite._id, {
             status: "accepted",
         });
+        
+        console.log("✅ acceptInvitation: Invitation marked as accepted");
 
         return { orgId: invite.orgId };
     },

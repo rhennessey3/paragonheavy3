@@ -40,6 +40,10 @@ export function DialogTitle({ children }: { children: React.ReactNode }) {
     return <h2 className="text-lg font-semibold">{children}</h2>;
 }
 
+export function DialogDescription({ children }: { children: React.ReactNode }) {
+    return <p className="text-sm text-muted-foreground mt-1">{children}</p>;
+}
+
 export function DialogFooter({ children, className }: { children: React.ReactNode; className?: string }) {
     return <div className={className ?? 'flex justify-end space-x-2 mt-4'}>{children}</div>;
 }

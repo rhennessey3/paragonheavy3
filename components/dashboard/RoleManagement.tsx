@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { Id } from "@/convex/_generated/dataModel";
-import { InviteMemberModal } from "./InviteMemberModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Trash2 } from "lucide-react";
+import { Trash2, UserPlus, Clock, CheckCircle2, XCircle } from "lucide-react";
+import Link from "next/link";
 
 interface RoleManagementProps {
   orgId: Id<"organizations">;
@@ -21,7 +21,6 @@ interface RoleManagementProps {
 export function RoleManagement({ orgId, currentUserId, currentUserRole, orgType }: RoleManagementProps) {
   const { toast } = useToast();
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   const members = useQuery(api.users.getOrganizationMembers, { orgId });
   const invitations = useQuery(api.invitations.getOrgInvitations, { orgId });
@@ -61,12 +60,12 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole, orgType 
     }
   };
 
-  const handleRevoke = async (invitationId: Id<"invitations">) => {
+  const handleRevokeInvitation = async (invitationId: Id<"invitations">) => {
     try {
       await revokeInvitation({ invitationId });
       toast({
-        title: "Invitation Revoked",
-        description: "The invitation link is no longer valid.",
+        title: "Success",
+        description: "Invitation revoked successfully",
       });
     } catch (error) {
       toast({
@@ -80,6 +79,48 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole, orgType 
   if (!members) {
     return <div>Loading members...</div>;
   }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "pending":
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
+      case "accepted":
+        return (
+          <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">
+            <CheckCircle2 className="h-3 w-3 mr-1" />
+            Accepted
+          </Badge>
+        );
+      case "revoked":
+        return (
+          <Badge variant="secondary" className="bg-red-100 text-red-800 hover:bg-red-100">
+            <XCircle className="h-3 w-3 mr-1" />
+            Revoked
+          </Badge>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const pendingInvitations = invitations?.filter((inv) => inv.status === "pending") || [];
+  const acceptedInvitations = invitations?.filter((inv) => inv.status === "accepted") || [];
+  const revokedInvitations = invitations?.filter((inv) => inv.status === "revoked") || [];
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -105,22 +146,25 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole, orgType 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Organization Members</CardTitle>
+        <CardTitle>Team Management</CardTitle>
         {currentUserRole === "admin" && (
-          <Button onClick={() => setIsInviteModalOpen(true)}>
-            Invite Member
-          </Button>
+          <Link href="/dashboard/team">
+            <Button>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Invite Team Member
+            </Button>
+          </Link>
         )}
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="members">
-          <TabsList className="mb-4">
-            <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
-            {currentUserRole === "admin" && (
-              <TabsTrigger value="invitations">
-                Pending Invitations ({invitations?.length || 0})
-              </TabsTrigger>
-            )}
+        <Tabs defaultValue="members" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="members">
+              Active Members ({members.length})
+            </TabsTrigger>
+            <TabsTrigger value="invitations">
+              Invitation History ({invitations?.length || 0})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="members" className="space-y-4">
@@ -197,46 +241,108 @@ export function RoleManagement({ orgId, currentUserId, currentUserRole, orgType 
             )}
           </TabsContent>
 
-          <TabsContent value="invitations" className="space-y-4">
-            {invitations?.map((invite) => (
-              <div
-                key={invite._id}
-                className="flex items-center justify-between p-3 border rounded-lg"
-              >
-                <div className="flex items-center space-x-3">
-                  <div>
-                    <p className="font-medium">{invite.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Invited as {invite.role} • {new Date(invite.createdAt).toLocaleDateString()}
-                    </p>
+          <TabsContent value="invitations" className="space-y-6">
+            {/* Pending Invitations */}
+            {pendingInvitations.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Pending ({pendingInvitations.length})
+                </h3>
+                {pendingInvitations.map((invite) => (
+                  <div
+                    key={invite._id}
+                    className="flex items-center justify-between p-3 border rounded-lg bg-yellow-50"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{invite.email}</p>
+                        {getStatusBadge(invite.status)}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Invited as {invite.role} • {formatDate(invite.createdAt)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        By {invite.inviterName}
+                      </p>
+                    </div>
+                    {currentUserRole === "admin" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRevokeInvitation(invite._id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => handleRevoke(invite._id)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Revoke
-                </Button>
+                ))}
               </div>
-            ))}
-            {(!invitations || invitations.length === 0) && (
+            )}
+
+            {/* Accepted Invitations */}
+            {acceptedInvitations.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Accepted ({acceptedInvitations.length})
+                </h3>
+                {acceptedInvitations.map((invite) => (
+                  <div
+                    key={invite._id}
+                    className="flex items-center justify-between p-3 border rounded-lg bg-green-50"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{invite.email}</p>
+                        {getStatusBadge(invite.status)}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Invited as {invite.role} • {formatDate(invite.createdAt)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        By {invite.inviterName}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Revoked Invitations */}
+            {revokedInvitations.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Revoked ({revokedInvitations.length})
+                </h3>
+                {revokedInvitations.map((invite) => (
+                  <div
+                    key={invite._id}
+                    className="flex items-center justify-between p-3 border rounded-lg bg-gray-50"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{invite.email}</p>
+                        {getStatusBadge(invite.status)}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Invited as {invite.role} • {formatDate(invite.createdAt)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        By {invite.inviterName}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!invitations || invitations.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                No pending invitations.
+                No invitation history found.
               </div>
             )}
           </TabsContent>
         </Tabs>
       </CardContent>
-
-      <InviteMemberModal
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
-        orgId={orgId}
-        orgType={orgType}
-      />
     </Card>
   );
 }

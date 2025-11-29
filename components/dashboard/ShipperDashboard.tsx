@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { RoleManagement } from "./RoleManagement";
 import { LoadCreationModal } from "./LoadCreationModal";
 import { AssignOrganizationModal } from "./AssignOrganizationModal";
 import { Button } from "@/components/ui/button";
@@ -70,16 +69,6 @@ export function ShipperDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Role Management Section - Phase 2 */}
-      {userProfile?.orgId && (
-        <RoleManagement
-          orgId={userProfile.orgId}
-          currentUserId={userId || ""}
-          currentUserRole={userProfile.role}
-          orgType="shipper"
-        />
-      )}
 
       <div className="p-4 border rounded-lg bg-muted/10">
         <div className="flex items-center justify-between mb-4">

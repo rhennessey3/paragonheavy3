@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { RoleManagement } from "./RoleManagement";
 import { LoadCreationModal } from "./LoadCreationModal";
 import { Button } from "@/components/ui/button";
 import { AssignOrganizationModal } from "./AssignOrganizationModal";
@@ -70,15 +69,6 @@ export function EscortDashboard() {
         </Card>
       </div>
 
-      {/* Organization Members Section */}
-      {userProfile?.orgId && (
-        <RoleManagement
-          orgId={userProfile.orgId}
-          currentUserId={userId || ""}
-          currentUserRole={userProfile.role}
-          orgType="escort"
-        />
-      )}
       <div className="p-4 border rounded-lg bg-muted/10">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Escort Actions</h3>

@@ -29,7 +29,10 @@ export default function InvitePage() {
                 title: "Welcome!",
                 description: "You have successfully joined the organization.",
             });
-            router.push("/dashboard");
+            
+            // Use window.location.href for a full page reload
+            // This ensures Clerk session and org context are properly refreshed
+            window.location.href = "/dashboard";
         } catch (error) {
             toast({
                 title: "Error",

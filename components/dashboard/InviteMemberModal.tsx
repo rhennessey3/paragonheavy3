@@ -35,20 +35,51 @@ export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMem
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            const result = await createInvitation({
+            // Step 1: Create Convex invitation record
+            const convexResult = await createInvitation({
                 email,
                 orgId,
                 role,
             });
 
-            const link = `${window.location.origin}/invite/${result.token}`;
+            // Step 2: Call Clerk API to send the actual invitation email
+            const clerkResponse = await fetch("/api/invitations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email,
+                    role,
+                    convexInviteId: convexResult.inviteId,
+                }),
+            });
+
+            if (!clerkResponse.ok) {
+                const errorData = await clerkResponse.json();
+                console.error("Clerk invitation failed:", errorData);
+                // Still show the link as fallback
+                const link = `${window.location.origin}/invite/${convexResult.token}`;
+                setInviteLink(link);
+                toast({
+                    title: "Invitation Created (Email may not have sent)",
+                    description: errorData.error || "The email might not have been sent. Please share the link manually.",
+                    variant: "default",
+                });
+                return;
+            }
+
+            const clerkData = await clerkResponse.json();
+            console.log("✅ Clerk invitation created:", clerkData);
+
+            // Show success - email was sent via Clerk
+            const link = `${window.location.origin}/invite/${convexResult.token}`;
             setInviteLink(link);
 
             toast({
-                title: "Invitation Created",
-                description: "Share the link with the new member.",
+                title: "Invitation Sent!",
+                description: `An email has been sent to ${email}. You can also share the link below.`,
             });
         } catch (error) {
+            console.error("Invitation error:", error);
             toast({
                 title: "Error",
                 description: "Failed to create invitation. It may already exist.",
