@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useSignIn } from "@clerk/nextjs";
+import { useSignIn, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,18 @@ import { useToast } from "@/components/ui/use-toast";
 
 export default function SignInPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
+  const { isSignedIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (isSignedIn) {
+      router.push("/dashboard");
+    }
+  }, [isSignedIn, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +51,17 @@ export default function SignInPage() {
         });
       }
     } catch (err: any) {
+      // Check for session_exists error
+      const isSessionExists = err.errors?.some((e: any) => e.code === "session_exists");
+      if (isSessionExists) {
+        toast({
+          title: "Already Signed In",
+          description: "Redirecting to dashboard...",
+        });
+        router.push("/dashboard");
+        return;
+      }
+
       console.error(JSON.stringify(err, null, 2));
       const errorMessage = err.errors?.[0]?.message || "Invalid email or password.";
       toast({

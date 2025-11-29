@@ -29,7 +29,7 @@ export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMem
     const [inviteLink, setInviteLink] = useState<string | null>(null);
     const [isCopied, setIsCopied] = useState(false);
 
-    const createInvitation = useMutation(api.invitations.createInvitation);
+    const createInvitation = useMutation(api.invitations.createInvitationWithClerk);
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();

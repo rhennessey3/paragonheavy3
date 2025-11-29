@@ -1,20 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-
-// Helper to require authentication
-async function requireAuth(ctx: any) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-
-    const userProfile = await ctx.db
-        .query("userProfiles")
-        .withIndex("by_clerkUserId", (q: any) => q.eq("clerkUserId", identity.subject))
-        .first();
-
-    if (!userProfile) throw new Error("User profile not found");
-
-    return { identity, userProfile };
-}
+import { requireAuthSession } from "./auth";
 
 // Create invitation for hybrid Clerk approach
 export const createInvitationWithClerk = mutation({
@@ -36,7 +22,15 @@ export const createInvitationWithClerk = mutation({
         ),
     },
     handler: async (ctx, args) => {
-        const { userProfile } = await requireAuth(ctx);
+        const session = await requireAuthSession(ctx);
+
+        // Get user profile
+        const userProfile = await ctx.db
+            .query("userProfiles")
+            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
+            .first();
+
+        if (!userProfile) throw new Error("User profile not found");
 
         // Verify admin permission
         if (userProfile.role !== "admin") {
@@ -104,7 +98,7 @@ export const createInvitationWithClerk = mutation({
             createdAt: Date.now(),
         });
 
-        return { inviteId, clerkOrgId };
+        return { inviteId, clerkOrgId, token };
     },
 });
 
@@ -186,7 +180,15 @@ export const revokeInvitation = mutation({
         invitationId: v.id("invitations"),
     },
     handler: async (ctx, args) => {
-        const { userProfile } = await requireAuth(ctx);
+        const session = await requireAuthSession(ctx);
+
+        // Get user profile
+        const userProfile = await ctx.db
+            .query("userProfiles")
+            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
+            .first();
+
+        if (!userProfile) throw new Error("User profile not found");
 
         const invite = await ctx.db.get(args.invitationId);
         if (!invite) {
@@ -201,5 +203,69 @@ export const revokeInvitation = mutation({
         await ctx.db.patch(args.invitationId, {
             status: "revoked",
         });
+    },
+});
+
+// Get invitation by token (for public invite page)
+export const getInvitationByToken = query({
+    args: { token: v.string() },
+    handler: async (ctx, args) => {
+        const invite = await ctx.db
+            .query("invitations")
+            .withIndex("by_token", (q) => q.eq("token", args.token))
+            .first();
+
+        if (!invite) return null;
+
+        // Return limited info for public page
+        const org = await ctx.db.get(invite.orgId);
+        return {
+            ...invite,
+            orgName: org?.name,
+        };
+    },
+});
+
+// Accept invitation via token
+export const acceptInvitation = mutation({
+    args: { token: v.string() },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const invite = await ctx.db
+            .query("invitations")
+            .withIndex("by_token", (q) => q.eq("token", args.token))
+            .first();
+
+        if (!invite || invite.status !== "pending") {
+            throw new Error("Invalid or expired invitation");
+        }
+
+        const org = await ctx.db.get(invite.orgId);
+        if (!org) throw new Error("Organization not found");
+
+        const userProfile = await ctx.db
+            .query("userProfiles")
+            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
+            .first();
+
+        if (!userProfile) {
+            throw new Error("User profile not found");
+        }
+
+        // Update user profile
+        await ctx.db.patch(userProfile._id, {
+            orgId: invite.orgId,
+            role: invite.role,
+            clerkOrgId: org.clerkOrgId,
+        });
+
+        // Mark invitation as accepted
+        await ctx.db.patch(invite._id, {
+            status: "accepted",
+        });
+
+        return { orgId: invite.orgId };
     },
 });

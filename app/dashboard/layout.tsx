@@ -1,18 +1,23 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import DashboardAuthWrapper from "@/components/DashboardAuthWrapper";
+import { Button } from "@/components/ui/button";
+import { UserPlus } from "lucide-react";
+import { InviteMemberModal } from "@/components/dashboard/InviteMemberModal";
 
 export default function DashboardLayout({
   children,
 }: {
   children: ReactNode;
 }) {
-  const { userId } = useAuth();
+  const { user, isLoaded } = useUser();
+  const userId = user?.id;
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   const userProfile = useQuery(api.users.getUserProfile,
     userId ? { clerkUserId: userId } : "skip"
@@ -43,7 +48,17 @@ export default function DashboardLayout({
                 )}
               </div>
               <div className="flex items-center space-x-4">
-                {/* Organization switcher will go here */}
+                {organization && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsInviteModalOpen(true)}
+                    className="flex" // Removed hidden md:flex
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Invite Team
+                  </Button>
+                )}
                 <UserButton afterSignOutUrl="/" />
               </div>
             </div>
@@ -52,6 +67,15 @@ export default function DashboardLayout({
         <main className="container mx-auto p-6">
           {children}
         </main>
+
+        {organization && (
+          <InviteMemberModal
+            isOpen={isInviteModalOpen}
+            onClose={() => setIsInviteModalOpen(false)}
+            orgId={organization._id}
+            orgType={organization.type as any}
+          />
+        )}
       </div>
     </DashboardAuthWrapper>
   );
