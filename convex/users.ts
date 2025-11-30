@@ -9,19 +9,7 @@ export const createUserProfile = mutation({
     orgId: v.id("organizations"),
     email: v.string(),
     name: v.string(),
-    role: v.union(
-      v.literal("admin"),
-      v.literal("manager"),
-      v.literal("operator"),
-      v.literal("member"),
-      v.literal("dispatcher"),
-      v.literal("driver"),
-      v.literal("safety"),
-      v.literal("accounting"),
-      v.literal("escort"),
-      v.literal("planner"),
-      v.literal("ap")
-    ),
+    role: v.string(),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -95,19 +83,7 @@ export const updateUserProfile = mutation({
   args: {
     userProfileId: v.id("userProfiles"),
     name: v.optional(v.string()),
-    role: v.optional(v.union(
-      v.literal("admin"),
-      v.literal("manager"),
-      v.literal("operator"),
-      v.literal("member"),
-      v.literal("dispatcher"),
-      v.literal("driver"),
-      v.literal("safety"),
-      v.literal("accounting"),
-      v.literal("escort"),
-      v.literal("planner"),
-      v.literal("ap")
-    )),
+    role: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -310,19 +286,7 @@ export const updateMemberRole = mutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.string(),
-    newRole: v.union(
-      v.literal("admin"),
-      v.literal("manager"),
-      v.literal("operator"),
-      v.literal("member"),
-      v.literal("dispatcher"),
-      v.literal("driver"),
-      v.literal("safety"),
-      v.literal("accounting"),
-      v.literal("escort"),
-      v.literal("planner"),
-      v.literal("ap")
-    ),
+    newRole: v.string(),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -387,7 +351,7 @@ export const getOrganizationMembers = query({
     // Merge and deduplicate
     const allMembers = [...membersByOrgId];
     const existingIds = new Set(membersByOrgId.map((m) => m._id.toString()));
-    
+
     for (const member of membersByClerkOrgId) {
       if (!existingIds.has(member._id.toString())) {
         allMembers.push(member);

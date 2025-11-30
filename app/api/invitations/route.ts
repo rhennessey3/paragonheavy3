@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, getAuth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET /api/invitations/roles - Fetch available roles from Clerk
@@ -52,8 +52,48 @@ export async function GET(req: NextRequest) {
 // POST /api/invitations - Create invitation via Clerk API (sends email)
 export async function POST(req: NextRequest) {
     try {
-        const { userId, orgId: clerkOrgId } = await auth();
-        
+        // Try standard auth() first
+        let authObj = await auth();
+        let { userId, orgId: clerkOrgId } = authObj;
+
+        // If that fails, try getAuth(request)
+        if (!userId) {
+            console.log("⚠️ auth() returned null, trying getAuth(request)");
+            const reqAuth = getAuth(req as any);
+            if (reqAuth.userId) {
+                userId = reqAuth.userId;
+                clerkOrgId = reqAuth.orgId;
+                console.log("✅ getAuth(request) succeeded");
+            }
+        }
+
+        // Manual token parsing if auth() fails but header exists
+        if (!userId) {
+            const token = req.headers.get("x-clerk-auth-token");
+            if (token) {
+                try {
+                    const parts = token.split(".");
+                    if (parts.length === 3) {
+                        const payload = JSON.parse(atob(parts[1]));
+                        if (payload.sub) userId = payload.sub;
+                        if (payload.org_id) clerkOrgId = payload.org_id;
+                        console.log("✅ Recovered auth from token:", { userId, clerkOrgId });
+                    }
+                } catch (e) {
+                    console.error("Failed to decode token:", e);
+                }
+            }
+        }
+
+        const body = await req.json();
+        const { email, role, clerkRole: providedClerkRole, convexInviteId, orgId: bodyOrgId } = body;
+
+        // Fallback to body orgId if session orgId is missing
+        if (!clerkOrgId && bodyOrgId) {
+            clerkOrgId = bodyOrgId;
+            console.log("✅ Using orgId from request body:", clerkOrgId);
+        }
+
         if (!userId || !clerkOrgId) {
             console.log("❌ /api/invitations: Unauthorized - missing userId or orgId", { userId, clerkOrgId });
             return NextResponse.json(
@@ -61,9 +101,6 @@ export async function POST(req: NextRequest) {
                 { status: 401 }
             );
         }
-
-        const body = await req.json();
-        const { email, role, clerkRole: providedClerkRole, convexInviteId } = body;
 
         if (!email || !role) {
             return NextResponse.json(
@@ -82,7 +119,7 @@ export async function POST(req: NextRequest) {
 
         // Use the provided Clerk role key if available, otherwise fall back to mapping
         let clerkRole = providedClerkRole;
-        
+
         if (!clerkRole) {
             // Fallback mapping for backwards compatibility
             const roleMapping: Record<string, string> = {
@@ -104,7 +141,7 @@ export async function POST(req: NextRequest) {
             };
             clerkRole = roleMapping[role] || "org:member";
         }
-        
+
         console.log("🔄 Final role for Clerk:", { internalRole: role, clerkRole });
 
         // Call Clerk's Backend API to create organization invitation

@@ -13,14 +13,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Id } from "@/convex/_generated/dataModel";
-import { 
-  Users, 
-  UserPlus, 
-  Clock, 
-  CheckCircle2, 
-  XCircle, 
-  Trash2, 
-  Copy, 
+import {
+  Users,
+  UserPlus,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Trash2,
+  Copy,
   Check,
   Settings,
   Search,
@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FALLBACK_ROLES } from "@/lib/constants";
 
 type ActiveSection = "general" | "members";
 
@@ -44,12 +45,12 @@ export default function TeamPage() {
   const { organization: clerkOrg } = useOrganization();
   const userId = user?.id;
   const { toast } = useToast();
-  
+
   // State
   const [activeSection, setActiveSection] = useState<ActiveSection>("members");
   const [activeTab, setActiveTab] = useState<"members" | "invitations">("members");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<string>("operator");
+  const [role, setRole] = useState<string>("org:member"); // Default to a safe key
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
@@ -58,6 +59,10 @@ export default function TeamPage() {
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string } | null>(null);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // State for roles
+  const [clerkRoles, setClerkRoles] = useState<any[]>([]);
+  const [isLoadingRoles, setIsLoadingRoles] = useState(true);
 
   // Queries
   const userProfile = useQuery(api.users.getUserProfile,
@@ -75,6 +80,33 @@ export default function TeamPage() {
   const invitations = useQuery(api.invitations.getOrgInvitations,
     userProfile?.orgId ? { orgId: userProfile.orgId } : "skip"
   );
+
+  // Fetch roles from Clerk
+  useEffect(() => {
+    async function fetchRoles() {
+      if (!organization?.clerkOrgId) return;
+
+      try {
+        setIsLoadingRoles(true);
+        const response = await fetch(`/api/roles?orgId=${organization.clerkOrgId}`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log("Fetched roles from API:", data);
+          setClerkRoles(data.roles && data.roles.length > 0 ? data.roles : FALLBACK_ROLES);
+        } else {
+          console.error("Failed to fetch roles", response.status);
+          setClerkRoles(FALLBACK_ROLES);
+        }
+      } catch (error) {
+        console.error("Error fetching roles:", error);
+        setClerkRoles(FALLBACK_ROLES);
+      } finally {
+        setIsLoadingRoles(false);
+      }
+    }
+
+    fetchRoles();
+  }, [organization?.clerkOrgId]);
 
   // Mutations
   const createInvitation = useMutation(api.invitations.createInvitationWithClerk);
@@ -124,14 +156,17 @@ export default function TeamPage() {
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userProfile?.orgId) return;
-    
+
     // Find the Clerk role key for the selected role
     const roleOptions = getRoleOptions();
+    // The role state might be holding the key directly now if we change the Select value
+    // But let's check how we set it. 
+    // In the Select below, we use option.value which is now role.key (e.g. "org:admin")
     const selectedRole = roleOptions.find(r => r.value === role);
     const clerkRoleKey = selectedRole?.clerkKey || "org:member";
-    
+
     console.log("📧 Sending invite with role:", { role, clerkRoleKey });
-    
+
     setIsSubmitting(true);
     try {
       // Step 1: Create Convex invitation record
@@ -150,6 +185,7 @@ export default function TeamPage() {
           role,
           clerkRole: clerkRoleKey, // Pass the Clerk role key directly
           convexInviteId: convexResult.inviteId,
+          orgId: organization.clerkOrgId, // Pass orgId explicitly for fallback
         }),
       });
 
@@ -205,7 +241,7 @@ export default function TeamPage() {
   const resetInviteForm = () => {
     setInviteLink(null);
     setEmail("");
-    setRole(orgType === "escort" ? "driver" : orgType === "shipper" ? "planner" : "operator");
+    setRole(orgType === "escort" ? "org:driver" : orgType === "shipper" ? "org:planner" : "org:operator"); // Default might need adjustment based on actual keys
   };
 
   const handleRevokeInvitation = async (invitationId: Id<"invitations">) => {
@@ -226,7 +262,7 @@ export default function TeamPage() {
 
   const handleRoleUpdate = async (memberId: string, newRole: string) => {
     if (!userProfile?.orgId) return;
-    
+
     setUpdatingUserId(memberId);
     try {
       await updateMemberRole({
@@ -252,7 +288,7 @@ export default function TeamPage() {
 
   const handleRemoveMember = async () => {
     if (!memberToRemove) return;
-    
+
     toast({
       title: "Coming Soon",
       description: "Member removal will be available in a future update.",
@@ -262,7 +298,7 @@ export default function TeamPage() {
 
   const handleLeaveOrganization = () => {
     toast({
-      title: "Coming Soon", 
+      title: "Coming Soon",
       description: "Leave organization will be available in a future update.",
     });
     setShowLeaveDialog(false);
@@ -276,39 +312,47 @@ export default function TeamPage() {
     setShowDeleteDialog(false);
   };
 
-  // Clerk roles as configured in Clerk Dashboard -> Roles & Permissions
-  // These must match the exact keys defined in Clerk
-  const CLERK_ROLES = [
-    { value: "admin", label: "Admin", clerkKey: "org:admin" },
-    { value: "member", label: "Member", clerkKey: "org:member" },
-    { value: "dispatch", label: "Dispatch", clerkKey: "org:dispatch" },
-    { value: "accounting", label: "Accounting", clerkKey: "org:accounting" },
-    { value: "heavy_haul_rig_operator", label: "Heavy Haul Rig Operator", clerkKey: "org:heavy_haul_rig_operator" },
-    { value: "escort_operator", label: "Escort Operator", clerkKey: "org:escort_operator" },
-  ];
+
 
   // Get role options based on organization type (filter to relevant roles)
   const getRoleOptions = () => {
+    if (!clerkRoles.length) return [];
+
+    // Map Clerk roles to our dropdown format
+    const formattedRoles = clerkRoles.map(role => ({
+      value: role.key, // Use the key as the value for internal logic if needed, or map name
+      label: role.name,
+      clerkKey: role.key,
+      description: role.description
+    }));
+
+    console.log("Formatted roles:", formattedRoles);
+    console.log("Org Type:", orgType);
+
     // For all org types, we show all Clerk roles but can filter based on context
+    // You might want to adjust this filtering logic based on the actual role keys returned by Clerk
+    let filtered = formattedRoles;
+
     if (orgType === "shipper") {
-      return CLERK_ROLES.filter(r =>
-        ["admin", "dispatch", "accounting", "member"].includes(r.value)
+      filtered = formattedRoles.filter(r =>
+        ["org:admin", "org:dispatch", "org:accounting", "org:member"].includes(r.clerkKey)
+      );
+    } else if (orgType === "carrier") {
+      filtered = formattedRoles.filter(r =>
+        ["org:admin", "org:dispatch", "org:accounting", "org:heavy_haul_rig_operator", "org:escort_operator", "org:member"].includes(r.clerkKey)
+      );
+    } else if (orgType === "escort") {
+      filtered = formattedRoles.filter(r =>
+        ["org:admin", "org:dispatch", "org:escort_operator", "org:member"].includes(r.clerkKey)
       );
     }
-    
-    if (orgType === "carrier") {
-      return CLERK_ROLES.filter(r =>
-        ["admin", "dispatch", "accounting", "heavy_haul_rig_operator", "escort_operator", "member"].includes(r.value)
-      );
+
+    if (filtered.length === 0 && formattedRoles.length > 0) {
+      console.warn("Role filter returned empty list. Showing all roles as fallback.");
+      return formattedRoles;
     }
-    
-    if (orgType === "escort") {
-      return CLERK_ROLES.filter(r =>
-        ["admin", "dispatch", "escort_operator", "member"].includes(r.value)
-      );
-    }
-    
-    return CLERK_ROLES;
+
+    return filtered;
   };
 
   return (
@@ -329,26 +373,24 @@ export default function TeamPage() {
                 <h2 className="text-lg font-semibold">Organization</h2>
                 <p className="text-sm text-muted-foreground">Manage your organization.</p>
               </div>
-              
+
               <nav className="space-y-1">
                 <button
                   onClick={() => setActiveSection("general")}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeSection === "general"
-                      ? "bg-background shadow-sm"
-                      : "hover:bg-background/50"
-                  }`}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeSection === "general"
+                    ? "bg-background shadow-sm"
+                    : "hover:bg-background/50"
+                    }`}
                 >
                   <Settings className="h-4 w-4" />
                   General
                 </button>
                 <button
                   onClick={() => setActiveSection("members")}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeSection === "members"
-                      ? "bg-background shadow-sm"
-                      : "hover:bg-background/50"
-                  }`}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeSection === "members"
+                    ? "bg-background shadow-sm"
+                    : "hover:bg-background/50"
+                    }`}
                 >
                   <Users className="h-4 w-4" />
                   Members
@@ -361,7 +403,7 @@ export default function TeamPage() {
               {activeSection === "general" && (
                 <div className="space-y-6">
                   <h3 className="text-lg font-semibold border-b pb-4">General</h3>
-                  
+
                   {/* Organization Profile */}
                   <div className="flex items-center justify-between py-4 border-b">
                     <div className="text-sm text-muted-foreground">Organization Profile</div>
@@ -381,9 +423,9 @@ export default function TeamPage() {
                   {/* Leave Organization */}
                   <div className="flex items-center justify-between py-4 border-b">
                     <div className="text-sm text-muted-foreground">Leave organization</div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                       onClick={() => setShowLeaveDialog(true)}
                     >
@@ -395,9 +437,9 @@ export default function TeamPage() {
                   {isAdmin && (
                     <div className="flex items-center justify-between py-4 border-b">
                       <div className="text-sm text-muted-foreground">Delete organization</div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         onClick={() => setShowDeleteDialog(true)}
                       >
@@ -411,27 +453,25 @@ export default function TeamPage() {
               {activeSection === "members" && (
                 <div className="space-y-6">
                   <h3 className="text-lg font-semibold">Members</h3>
-                  
+
                   {/* Tabs */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 border-b">
                       <button
                         onClick={() => setActiveTab("members")}
-                        className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                          activeTab === "members"
-                            ? "border-primary text-foreground"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
-                        }`}
+                        className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === "members"
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                          }`}
                       >
                         Members <span className="ml-1 text-muted-foreground">{members?.length || 0}</span>
                       </button>
                       <button
                         onClick={() => setActiveTab("invitations")}
-                        className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                          activeTab === "invitations"
-                            ? "border-primary text-foreground"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
-                        }`}
+                        className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === "invitations"
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                          }`}
                       >
                         Invitations <span className="ml-1 text-muted-foreground">{pendingInvitations.length}</span>
                       </button>

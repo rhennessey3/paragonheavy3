@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast";
 import { Id } from "@/convex/_generated/dataModel";
 import { Copy, Check } from "lucide-react";
+import { FALLBACK_ROLES } from "@/lib/constants";
 
 interface InviteMemberModalProps {
     isOpen: boolean;
@@ -22,14 +23,15 @@ interface InviteMemberModalProps {
 export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMemberModalProps) {
     const { toast } = useToast();
     const [email, setEmail] = useState("");
-    const [role, setRole] = useState<"admin" | "manager" | "operator" | "dispatcher" | "driver" | "safety" | "accounting" | "escort" | "planner" | "ap">(
-        orgType === "escort" ? "driver" : orgType === "shipper" ? "planner" : "operator"
+    const [role, setRole] = useState<string>(
+        orgType === "escort" ? "org:driver" : orgType === "shipper" ? "org:planner" : "org:operator"
     );
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inviteLink, setInviteLink] = useState<string | null>(null);
     const [isCopied, setIsCopied] = useState(false);
 
     const createInvitation = useMutation(api.invitations.createInvitationWithClerk);
+    const organization = useQuery(api.organizations.getOrganizationById, { orgId });
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -50,6 +52,7 @@ export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMem
                     email,
                     role,
                     convexInviteId: convexResult.inviteId,
+                    orgId: organization?.clerkOrgId, // Pass Clerk Org ID explicitly
                 }),
             });
 
@@ -105,8 +108,59 @@ export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMem
     const handleClose = () => {
         setInviteLink(null);
         setEmail("");
-        setRole("operator");
+        setRole("org:operator");
         onClose();
+    };
+
+    const [clerkRoles, setClerkRoles] = useState<any[]>([]);
+    const [isLoadingRoles, setIsLoadingRoles] = useState(true);
+
+    useEffect(() => {
+        async function fetchRoles() {
+            try {
+                setIsLoadingRoles(true);
+                const response = await fetch("/api/roles");
+                if (response.ok) {
+                    const data = await response.json();
+                    setClerkRoles(data.roles && data.roles.length > 0 ? data.roles : FALLBACK_ROLES);
+                } else {
+                    setClerkRoles(FALLBACK_ROLES);
+                }
+            } catch (error) {
+                console.error("Error fetching roles:", error);
+                setClerkRoles(FALLBACK_ROLES);
+            } finally {
+                setIsLoadingRoles(false);
+            }
+        }
+        fetchRoles();
+    }, []);
+
+    const getRoleOptions = () => {
+        if (!clerkRoles.length) return [];
+
+        const formattedRoles = clerkRoles.map(role => ({
+            value: role.key,
+            label: role.name,
+            clerkKey: role.key
+        }));
+
+        if (orgType === "shipper") {
+            return formattedRoles.filter(r =>
+                ["org:admin", "org:dispatch", "org:accounting", "org:member"].includes(r.clerkKey)
+            );
+        }
+        if (orgType === "carrier") {
+            return formattedRoles.filter(r =>
+                ["org:admin", "org:dispatch", "org:accounting", "org:heavy_haul_rig_operator", "org:escort_operator", "org:member"].includes(r.clerkKey)
+            );
+        }
+        if (orgType === "escort") {
+            return formattedRoles.filter(r =>
+                ["org:admin", "org:dispatch", "org:escort_operator", "org:member"].includes(r.clerkKey)
+            );
+        }
+        return formattedRoles;
     };
 
     return (
@@ -133,40 +187,14 @@ export function InviteMemberModal({ isOpen, onClose, orgId, orgType }: InviteMem
                             <Label htmlFor="role">Role</Label>
                             <Select value={role} onValueChange={(val: any) => setRole(val)}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Select a role" />
+                                    <SelectValue placeholder={isLoadingRoles ? "Loading roles..." : "Select a role"} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {orgType !== "escort" && orgType !== "shipper" && (
-                                        <>
-                                            <SelectItem value="operator">Operator (Standard access)</SelectItem>
-                                            <SelectItem value="manager">Manager (Can edit settings)</SelectItem>
-                                        </>
-                                    )}
-                                    <SelectItem value="admin">Admin (Full access)</SelectItem>
-
-                                    {orgType === "shipper" && (
-                                        <>
-                                            <SelectItem value="planner">Planner</SelectItem>
-                                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
-                                            <SelectItem value="ap">AP (Accounts Payable)</SelectItem>
-                                        </>
-                                    )}
-
-                                    {orgType === "carrier" && (
-                                        <>
-                                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
-                                            <SelectItem value="driver">Driver</SelectItem>
-                                            <SelectItem value="safety">Safety</SelectItem>
-                                            <SelectItem value="accounting">Accounting</SelectItem>
-                                            <SelectItem value="escort">Escort</SelectItem>
-                                        </>
-                                    )}
-                                    {orgType === "escort" && (
-                                        <>
-                                            <SelectItem value="dispatcher">Dispatcher</SelectItem>
-                                            <SelectItem value="driver">Driver</SelectItem>
-                                        </>
-                                    )}
+                                    {getRoleOptions().map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>

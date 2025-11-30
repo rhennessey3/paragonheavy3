@@ -25,19 +25,7 @@ export default defineSchema({
     orgId: v.optional(v.id("organizations")), // Link to internal org
     email: v.string(),
     name: v.string(),
-    role: v.union(
-      v.literal("admin"),
-      v.literal("manager"),
-      v.literal("operator"),
-      v.literal("member"),
-      v.literal("dispatcher"),
-      v.literal("driver"),
-      v.literal("safety"),
-      v.literal("accounting"),
-      v.literal("escort"),
-      v.literal("planner"),
-      v.literal("ap")
-    ),
+    role: v.string(),
     createdAt: v.number(),
     lastActiveAt: v.optional(v.number()),
     emailVerified: v.optional(v.boolean()),
@@ -102,19 +90,7 @@ export default defineSchema({
   invitations: defineTable({
     email: v.string(),
     orgId: v.id("organizations"),
-    role: v.union(
-      v.literal("admin"),
-      v.literal("manager"),
-      v.literal("operator"),
-      v.literal("member"),
-      v.literal("dispatcher"),
-      v.literal("driver"),
-      v.literal("safety"),
-      v.literal("accounting"),
-      v.literal("escort"),
-      v.literal("planner"),
-      v.literal("ap")
-    ),
+    role: v.string(),
     token: v.string(),
     clerkInvitationId: v.optional(v.string()), // Link to Clerk invitation
     status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked")),

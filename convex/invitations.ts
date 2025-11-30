@@ -7,19 +7,7 @@ export const createInvitationWithClerk = mutation({
     args: {
         email: v.string(),
         orgId: v.id("organizations"),
-        role: v.union(
-            v.literal("admin"),
-            v.literal("manager"),
-            v.literal("operator"),
-            v.literal("member"),
-            v.literal("dispatcher"),
-            v.literal("driver"),
-            v.literal("safety"),
-            v.literal("accounting"),
-            v.literal("escort"),
-            v.literal("planner"),
-            v.literal("ap")
-        ),
+        role: v.string(),
     },
     handler: async (ctx, args) => {
         const session = await requireAuthSession(ctx);
@@ -249,13 +237,13 @@ export const acceptInvitation = mutation({
     args: { token: v.string() },
     handler: async (ctx, args) => {
         console.log("🎫 acceptInvitation called with token:", args.token.substring(0, 8) + "...");
-        
+
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) {
             console.log("❌ acceptInvitation: No identity found - user not authenticated");
             throw new Error("Unauthorized");
         }
-        
+
         console.log("👤 acceptInvitation: User identity found:", {
             subject: identity.subject,
             email: identity.email,
@@ -273,7 +261,7 @@ export const acceptInvitation = mutation({
             });
             throw new Error("Invalid or expired invitation");
         }
-        
+
         console.log("✅ acceptInvitation: Invitation found:", {
             inviteId: invite._id,
             email: invite.email,
@@ -286,7 +274,7 @@ export const acceptInvitation = mutation({
             console.log("❌ acceptInvitation: Organization not found:", invite.orgId);
             throw new Error("Organization not found");
         }
-        
+
         console.log("✅ acceptInvitation: Organization found:", {
             orgId: org._id,
             name: org.name,
@@ -301,7 +289,7 @@ export const acceptInvitation = mutation({
         if (!userProfile) {
             console.log("⚠️ acceptInvitation: User profile NOT found for clerkUserId:", identity.subject);
             console.log("🔧 Creating user profile on-demand for invited user...");
-            
+
             // Create user profile on-demand if webhook hasn't processed yet
             const now = Date.now();
             const userProfileId = await ctx.db.insert("userProfiles", {
@@ -314,14 +302,14 @@ export const acceptInvitation = mutation({
                 createdAt: now,
                 lastActiveAt: now,
             });
-            
+
             console.log("✅ acceptInvitation: User profile created on-demand:", userProfileId);
-            
+
             // Mark invitation as accepted
             await ctx.db.patch(invite._id, {
                 status: "accepted",
             });
-            
+
             console.log("✅ acceptInvitation: Invitation marked as accepted");
             return { orgId: invite.orgId };
         }
@@ -338,14 +326,14 @@ export const acceptInvitation = mutation({
             role: invite.role,
             clerkOrgId: org.clerkOrgId,
         });
-        
+
         console.log("✅ acceptInvitation: User profile updated with org info");
 
         // Mark invitation as accepted
         await ctx.db.patch(invite._id, {
             status: "accepted",
         });
-        
+
         console.log("✅ acceptInvitation: Invitation marked as accepted");
 
         return { orgId: invite.orgId };

@@ -8,11 +8,11 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up/verify-email-address',
   '/sign-up/sso-callback',
   '/sign-up/tasks/create-organization(.*)',
-  '/dashboard(.*)',
   '/api/webhooks(.*)',
   '/api/workflows(.*)',
   '/api/onboarding-complete(.*)',
   '/api/invitations(.*)',
+  '/api/roles(.*)',
   '/invite(.*)'
 ]);
 
