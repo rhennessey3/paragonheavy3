@@ -1,9 +1,8 @@
-
 "use client";
 
 import { useSignIn, useClerk, useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,15 +10,37 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 
-export default function SignInPage() {
+function SignInContent() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const { signOut } = useClerk();
   const { isSignedIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasInvitation, setHasInvitation] = useState(false);
+  const [invitationParams, setInvitationParams] = useState<string>("");
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+
+  // Check for invitation parameters
+  useEffect(() => {
+    const ticket = searchParams.get("__clerk_ticket");
+    const invitationId = searchParams.get("__clerk_invitation_id");
+    const redirectUrl = searchParams.get("redirect_url");
+    
+    console.log("🎫 Sign-in page checking for invitation:", { ticket: !!ticket, invitationId, redirectUrl });
+    
+    if (ticket || invitationId) {
+      setHasInvitation(true);
+      // Build params string for passing to sign-up
+      const params = new URLSearchParams();
+      if (ticket) params.set("__clerk_ticket", ticket);
+      if (invitationId) params.set("__clerk_invitation_id", invitationId);
+      if (redirectUrl) params.set("redirect_url", redirectUrl);
+      setInvitationParams(params.toString());
+    }
+  }, [searchParams]);
 
   const handleSignOut = async () => {
     try {
@@ -153,6 +174,31 @@ export default function SignInPage() {
         <p className="mt-2 text-muted-foreground">Welcome back to Paragon Heavy</p>
       </div>
 
+      {/* Show prominent sign-up option for invited users who don't have an account */}
+      {hasInvitation && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="pt-6">
+            <div className="text-center space-y-3">
+              <p className="text-sm font-medium text-primary">
+                🎉 You've been invited to join an organization!
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Don't have an account yet? Create one to accept the invitation.
+              </p>
+              <Button
+                className="w-full"
+                onClick={() => router.push(`/sign-up${invitationParams ? `?${invitationParams}` : ""}`)}
+              >
+                Create Account to Accept Invitation
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Already have an account? Sign in below.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="pt-6">
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -199,5 +245,20 @@ export default function SignInPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <SignInContent />
+    </Suspense>
   );
 }

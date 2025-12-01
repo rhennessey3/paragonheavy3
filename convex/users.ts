@@ -407,3 +407,84 @@ export const markOnboardingCompleted = mutation({
     console.log("✅ markOnboardingCompleted: Onboarding marked as complete for clerkUserId:", args.clerkUserId);
   },
 });
+
+// Link user to organization after invitation sign-up
+// This ensures the user profile is properly set up before they hit the dashboard
+export const linkUserToOrgAfterInvite = mutation({
+  args: {
+    clerkOrgId: v.string(),
+    clerkInvitationId: v.optional(v.string()),
+    role: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    const clerkUserId = session.sub;
+
+    console.log("🔗 linkUserToOrgAfterInvite called:", {
+      clerkUserId,
+      clerkOrgId: args.clerkOrgId,
+      clerkInvitationId: args.clerkInvitationId,
+    });
+
+    // Find the organization by Clerk org ID
+    const organization = await ctx.db
+      .query("organizations")
+      .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .first();
+
+    if (!organization) {
+      console.error("❌ Organization not found for clerkOrgId:", args.clerkOrgId);
+      throw new Error("Organization not found. Please try again in a moment.");
+    }
+
+    // Find or create user profile
+    let userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
+      .first();
+
+    const now = Date.now();
+
+    if (userProfile) {
+      // Update existing profile with org info
+      console.log("📝 Updating existing user profile with org:", organization._id);
+      await ctx.db.patch(userProfile._id, {
+        orgId: organization._id,
+        clerkOrgId: args.clerkOrgId,
+        role: args.role || userProfile.role || "member",
+        lastActiveAt: now,
+      });
+    } else {
+      // Create new profile
+      console.log("➕ Creating new user profile for invited user");
+      await ctx.db.insert("userProfiles", {
+        clerkUserId,
+        clerkOrgId: args.clerkOrgId,
+        orgId: organization._id,
+        email: session.email || "",
+        name: session.name || "",
+        role: args.role || "member",
+        createdAt: now,
+        lastActiveAt: now,
+      });
+    }
+
+    // Mark invitation as accepted if we have the Clerk invitation ID
+    if (args.clerkInvitationId) {
+      const invite = await ctx.db
+        .query("invitations")
+        .withIndex("by_clerkInvitationId", (q) => 
+          q.eq("clerkInvitationId", args.clerkInvitationId)
+        )
+        .first();
+
+      if (invite && invite.status === "pending") {
+        await ctx.db.patch(invite._id, { status: "accepted" });
+        console.log("✅ Marked invitation as accepted");
+      }
+    }
+
+    console.log("✅ User successfully linked to organization:", organization.name);
+    return { success: true, orgId: organization._id, orgName: organization.name };
+  },
+});

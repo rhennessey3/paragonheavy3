@@ -59,6 +59,7 @@ export default function TeamPage() {
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string } | null>(null);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editingRoleFor, setEditingRoleFor] = useState<string | null>(null);
 
   // State for roles
   const [clerkRoles, setClerkRoles] = useState<any[]>([]);
@@ -533,27 +534,53 @@ export default function TeamPage() {
                                 {formatDate(member.createdAt)}
                               </td>
                               <td className="p-3">
-                                {isAdmin && member.clerkUserId !== userId ? (
-                                  <Select
-                                    value={member.role}
-                                    onValueChange={(value) => handleRoleUpdate(member.clerkUserId, value)}
-                                    disabled={updatingUserId === member.clerkUserId}
-                                  >
-                                    <SelectTrigger className="w-32 h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {getRoleOptions().map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                {isAdmin && member.clerkUserId !== userId && editingRoleFor === member.clerkUserId ? (
+                                  <div className="flex items-center gap-2">
+                                    <Select
+                                      value={member.role}
+                                      onValueChange={(value) => {
+                                        handleRoleUpdate(member.clerkUserId, value);
+                                        setEditingRoleFor(null);
+                                      }}
+                                      disabled={updatingUserId === member.clerkUserId}
+                                    >
+                                      <SelectTrigger className="w-32 h-8">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {getRoleOptions().map((option) => (
+                                          <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2 text-muted-foreground"
+                                      onClick={() => setEditingRoleFor(null)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
                                 ) : (
-                                  <Badge variant="secondary" className="capitalize">
-                                    {member.role}
-                                  </Badge>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="secondary" className="capitalize">
+                                      {/* Display friendly role name */}
+                                      {getRoleOptions().find(r => r.value === member.role)?.label || member.role?.replace('org:', '') || 'Member'}
+                                    </Badge>
+                                    {isAdmin && member.clerkUserId !== userId && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        onClick={() => setEditingRoleFor(member.clerkUserId)}
+                                      >
+                                        Edit
+                                      </Button>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                               <td className="p-3 text-right">

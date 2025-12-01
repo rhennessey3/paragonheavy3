@@ -2,8 +2,37 @@ import Link from "next/link";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 
-export default function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  
+  // Auto-redirect signed-in users to dashboard
+  const { userId } = await auth();
+  if (userId) {
+    redirect("/dashboard");
+  }
+
+  // Check for Clerk invitation redirect parameters
+  // Clerk redirects here with __clerk_status and __clerk_ticket when using custom auth pages
+  const clerkStatus = params.__clerk_status;
+  const clerkTicket = params.__clerk_ticket;
+  
+  if (clerkStatus === "sign_up" && clerkTicket) {
+    // Redirect to sign-up page with the ticket for invitation acceptance
+    redirect(`/sign-up?__clerk_ticket=${clerkTicket}`);
+  }
+  
+  if (clerkStatus === "sign_in" && clerkTicket) {
+    // Existing user - redirect to sign-in with ticket
+    redirect(`/sign-in?__clerk_ticket=${clerkTicket}`);
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-16">

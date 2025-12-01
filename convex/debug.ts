@@ -139,3 +139,55 @@ export const createSampleData = mutation({
     };
   },
 });
+
+// Debug: Manually link a user to an organization (for fixing broken invitation flows)
+export const manuallyLinkUserToOrg = mutation({
+  args: {
+    clerkUserId: v.string(),
+    clerkOrgId: v.string(),
+    role: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    console.log("🔧 DEBUG: Manually linking user to org:", args);
+
+    // Find the organization by Clerk org ID
+    const organization = await ctx.db
+      .query("organizations")
+      .withIndex("by_clerkOrgId", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .first();
+
+    if (!organization) {
+      console.error("❌ Organization not found for clerkOrgId:", args.clerkOrgId);
+      return { success: false, error: "Organization not found" };
+    }
+
+    // Find or create user profile
+    let userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .first();
+
+    const now = Date.now();
+
+    if (userProfile) {
+      // Update existing profile with org info
+      console.log("📝 Updating existing user profile with org:", organization._id);
+      await ctx.db.patch(userProfile._id, {
+        orgId: organization._id,
+        clerkOrgId: args.clerkOrgId,
+        role: args.role || userProfile.role || "member",
+        lastActiveAt: now,
+      });
+      return { 
+        success: true, 
+        action: "updated",
+        orgId: organization._id, 
+        orgName: organization.name,
+        userId: userProfile._id
+      };
+    } else {
+      console.error("❌ User profile not found for clerkUserId:", args.clerkUserId);
+      return { success: false, error: "User profile not found" };
+    }
+  },
+});

@@ -19,6 +19,10 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/sign-up/tasks/create-organization"
       appearance={{
         elements: {
           formButtonPrimary: "bg-primary hover:bg-primary/90 text-sm normal-case",

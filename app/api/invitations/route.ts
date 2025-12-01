@@ -145,6 +145,9 @@ export async function POST(req: NextRequest) {
         console.log("🔄 Final role for Clerk:", { internalRole: role, clerkRole });
 
         // Call Clerk's Backend API to create organization invitation
+        // Use the app URL, preferring ngrok URL for webhook consistency
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        
         const clerkResponse = await fetch(
             `https://api.clerk.com/v1/organizations/${clerkOrgId}/invitations`,
             {
@@ -156,9 +159,10 @@ export async function POST(req: NextRequest) {
                 body: JSON.stringify({
                     email_address: email,
                     role: clerkRole,
-                    // redirect_url is where users go after accepting
-                    // They'll be redirected to our dashboard after Clerk handles the sign-up/sign-in
-                    redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`,
+                    // redirect_url is where users go after Clerk handles sign-up/sign-in
+                    // Use "/" (public route) to avoid auth redirect issues, then let the 
+                    // home page redirect signed-in users to dashboard
+                    redirect_url: `${appUrl}/`,
                 }),
             }
         );
