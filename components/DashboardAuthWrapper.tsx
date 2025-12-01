@@ -38,7 +38,7 @@ export default function DashboardAuthWrapper({
 
         if (!userId) {
             console.log("🔒 DashboardAuthWrapper: No userId, redirecting to sign-in");
-            // router.push("/sign-in"); // DISABLE REDIRECT FOR DEBUGGING
+            router.push("/sign-in");
             return;
         }
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useAuth, useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
+import { useAuth, useUser, SignInButton, SignUp } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
@@ -20,6 +20,7 @@ export default function InvitePage() {
     const invite = useQuery(api.invitations.getInvitationByToken, { token });
     const acceptInvitation = useMutation(api.invitations.acceptInvitation);
     const [isAccepting, setIsAccepting] = useState(false);
+    const [showSignUp, setShowSignUp] = useState(false);
 
     const handleAccept = async () => {
         setIsAccepting(true);
@@ -29,7 +30,7 @@ export default function InvitePage() {
                 title: "Welcome!",
                 description: "You have successfully joined the organization.",
             });
-            
+
             // Use window.location.href for a full page reload
             // This ensures Clerk session and org context are properly refreshed
             window.location.href = "/dashboard";
@@ -98,17 +99,32 @@ export default function InvitePage() {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <p className="text-sm text-center text-muted-foreground">
-                                Please sign in or create an account to accept this invitation.
-                            </p>
-                            <div className="grid grid-cols-2 gap-4">
-                                <SignInButton mode="modal" forceRedirectUrl={`/invite/${token}`}>
-                                    <Button variant="outline" className="w-full">Sign In</Button>
-                                </SignInButton>
-                                <SignUpButton mode="modal" forceRedirectUrl={`/invite/${token}`}>
-                                    <Button className="w-full">Sign Up</Button>
-                                </SignUpButton>
-                            </div>
+                            {showSignUp ? (
+                                <div className="flex justify-center">
+                                    <SignUp
+                                        initialValues={{ emailAddress: invite.email }}
+                                        forceRedirectUrl={`/invite/${token}`}
+                                        signInUrl={`/sign-in?redirect_url=/invite/${token}`}
+                                    />
+                                </div>
+                            ) : (
+                                <>
+                                    <p className="text-sm text-center text-muted-foreground">
+                                        Please sign in or create an account to accept this invitation.
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <SignInButton mode="modal" forceRedirectUrl={`/invite/${token}`}>
+                                            <Button variant="outline" className="w-full">Sign In</Button>
+                                        </SignInButton>
+                                        <Button
+                                            className="w-full"
+                                            onClick={() => setShowSignUp(true)}
+                                        >
+                                            Sign Up
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
                 </CardContent>
