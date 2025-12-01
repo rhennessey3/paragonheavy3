@@ -77,7 +77,8 @@ export default function DashboardLayout({
               </div>
               
               <div className="flex items-center space-x-4">
-                {organization && (
+                {/* Only show Invite Team button for admins */}
+                {organization && (userProfile?.role === "admin" || userProfile?.role === "org:admin") && (
                   <Link href="/dashboard/team">
                     <Button variant="outline" size="sm">
                       <UserPlus className="mr-2 h-4 w-4" />

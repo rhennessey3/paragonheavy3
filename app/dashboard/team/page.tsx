@@ -262,10 +262,27 @@ export default function TeamPage() {
   };
 
   const handleRoleUpdate = async (memberId: string, newRole: string) => {
-    if (!userProfile?.orgId) return;
+    if (!userProfile?.orgId || !organization?.clerkOrgId) return;
 
     setUpdatingUserId(memberId);
     try {
+      // Step 1: Update role in Clerk (source of truth for auth)
+      const clerkResponse = await fetch("/api/members/role", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clerkOrgId: organization.clerkOrgId,
+          clerkUserId: memberId,
+          newRole: newRole,
+        }),
+      });
+
+      if (!clerkResponse.ok) {
+        const errorData = await clerkResponse.json();
+        throw new Error(errorData.error || "Failed to update role in Clerk");
+      }
+
+      // Step 2: Update role in Convex (for our app's queries)
       await updateMemberRole({
         orgId: userProfile.orgId,
         userId: memberId,
@@ -276,10 +293,11 @@ export default function TeamPage() {
         title: "Success",
         description: "Member role updated successfully",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Role update error:", error);
       toast({
         title: "Error",
-        description: "Failed to update member role",
+        description: error.message || "Failed to update member role",
         variant: "destructive",
       });
     } finally {
@@ -455,7 +473,7 @@ export default function TeamPage() {
                 <div className="space-y-6">
                   <h3 className="text-lg font-semibold">Members</h3>
 
-                  {/* Tabs */}
+                  {/* Tabs - Invitations tab only visible to admins */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 border-b">
                       <button
@@ -467,15 +485,17 @@ export default function TeamPage() {
                       >
                         Members <span className="ml-1 text-muted-foreground">{members?.length || 0}</span>
                       </button>
-                      <button
-                        onClick={() => setActiveTab("invitations")}
-                        className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === "invitations"
-                          ? "border-primary text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
-                          }`}
-                      >
-                        Invitations <span className="ml-1 text-muted-foreground">{pendingInvitations.length}</span>
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setActiveTab("invitations")}
+                          className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === "invitations"
+                            ? "border-primary text-foreground"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                          Invitations <span className="ml-1 text-muted-foreground">{pendingInvitations.length}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -609,8 +629,8 @@ export default function TeamPage() {
                     </div>
                   )}
 
-                  {/* Invitations Tab */}
-                  {activeTab === "invitations" && (
+                  {/* Invitations Tab - Admin only */}
+                  {activeTab === "invitations" && isAdmin && (
                     <div className="space-y-6">
                       {/* Invite Form */}
                       {isAdmin && !inviteLink && (
