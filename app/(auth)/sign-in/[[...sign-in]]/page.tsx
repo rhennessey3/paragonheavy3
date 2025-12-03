@@ -19,6 +19,9 @@ function SignInContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasInvitation, setHasInvitation] = useState(false);
   const [invitationParams, setInvitationParams] = useState<string>("");
+  const [needsMFA, setNeedsMFA] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaStrategy, setMfaStrategy] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -90,9 +93,39 @@ function SignInContent() {
         console.log("✅ Sign-in: Performing full page redirect to dashboard");
         window.location.href = "/dashboard";
         return; // Stop execution after redirect
+      } else if (result.status === "needs_second_factor") {
+        // Handle MFA requirement
+        console.log("🔐 Sign-in: MFA required", {
+          supportedSecondFactors: result.supportedSecondFactors,
+        });
+        
+        // Find the first available second factor strategy (usually totp or phone_code)
+        const availableStrategy = result.supportedSecondFactors?.[0]?.strategy;
+        if (availableStrategy) {
+          setMfaStrategy(availableStrategy);
+          setNeedsMFA(true);
+          
+          // Prepare the second factor
+          await signIn.prepareSecondFactor({ strategy: availableStrategy });
+          
+          toast({
+            title: "Two-factor authentication required",
+            description: "Please enter your verification code.",
+          });
+        } else {
+          toast({
+            title: "MFA setup required",
+            description: "Please set up two-factor authentication in your account settings.",
+            variant: "destructive",
+          });
+        }
       } else {
-        // Handle other statuses (e.g. MFA)
-        console.log("⚠️ Sign-in: Status not complete", JSON.stringify(result, null, 2));
+        // Handle other statuses
+        console.log("⚠️ Sign-in: Status not complete", {
+          status: result.status,
+          supportedFirstFactors: result.supportedFirstFactors,
+          supportedSecondFactors: result.supportedSecondFactors,
+        });
         toast({
           title: "Sign in incomplete",
           description: "Additional verification required.",
@@ -121,7 +154,15 @@ function SignInContent() {
         return;
       }
 
-      console.error("❌ Sign-in: Error details", JSON.stringify(err, null, 2));
+      // Extract only safe error properties to avoid circular reference errors
+      console.error("❌ Sign-in: Error details", {
+        message: err.message,
+        errors: err.errors?.map((e: any) => ({
+          message: e.message,
+          longMessage: e.longMessage,
+          code: e.code,
+        })),
+      });
       toast({
         title: "Error",
         description: err.errors?.[0]?.message || "Invalid email or password.",
@@ -129,6 +170,204 @@ function SignInContent() {
       });
     } finally {
       console.log("🔵 Sign-in: Resetting isSubmitting");
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle MFA code submission (also handles password reset codes)
+  const handleMFA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded || !mfaStrategy) return;
+
+    setIsSubmitting(true);
+
+    try {
+      let result;
+      
+      // Check if this is a password reset flow or MFA flow
+      if (mfaStrategy === "reset_password_email_code") {
+        // This is a password reset code verification
+        result = await signIn.attemptFirstFactor({
+          strategy: "reset_password_email_code",
+          code: mfaCode,
+        });
+        
+        // After password reset code is verified, we need to handle setting a new password
+        if (result.status === "needs_new_password") {
+          toast({
+            title: "Code verified",
+            description: "Please set your new password.",
+          });
+          // TODO: Show password reset form (for now, redirect to sign-in)
+          // In a full implementation, you'd show a form to set the new password
+          setNeedsMFA(false);
+          setMfaCode("");
+          setMfaStrategy(null);
+          toast({
+            title: "Password reset in progress",
+            description: "Please use the link in your email to complete password reset.",
+          });
+          return;
+        }
+      } else {
+        // This is regular MFA (second factor)
+        result = await signIn.attemptSecondFactor({
+          strategy: mfaStrategy,
+          code: mfaCode,
+        });
+      }
+
+      if (result.status === "complete") {
+        console.log("✅ Verification complete, setting active session");
+        await setActive({ session: result.createdSessionId });
+        console.log("✅ Session activated");
+        window.location.href = "/dashboard";
+        return;
+      } else {
+        toast({
+          title: "Verification failed",
+          description: "Invalid code. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      console.error("❌ Verification error", {
+        message: err.message,
+        errors: err.errors?.map((e: any) => ({
+          message: e.message,
+          longMessage: e.longMessage,
+          code: e.code,
+        })),
+      });
+      toast({
+        title: "Error",
+        description: err.errors?.[0]?.message || "Invalid verification code.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle password reset using Clerk's sign-in flow with password reset strategy
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Please enter your email address first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      
+      // Use Clerk's sign-in flow to initiate password reset
+      // This creates a sign-in attempt that can be used for password reset
+      const result = await signIn.create({
+        identifier: email,
+      });
+
+      console.log("🔍 Sign-in result for password reset:", {
+        status: result.status,
+        supportedFirstFactors: result.supportedFirstFactors,
+        firstFactorVerification: result.firstFactorVerification,
+      });
+
+      // Prepare password reset using email code strategy
+      if (result.supportedFirstFactors) {
+        // Find the password reset strategy (usually "reset_password_email_code")
+        const resetStrategy = result.supportedFirstFactors.find(
+          (factor: any) => factor.strategy === "reset_password_email_code"
+        );
+
+        if (resetStrategy) {
+          // Extract email address ID from the first factor verification or strategy
+          // The email address ID is needed for password reset
+          const emailAddressId = resetStrategy.emailAddressId || 
+                                 result.firstFactorVerification?.emailAddressId ||
+                                 result.supportedFirstFactors.find((f: any) => f.emailAddressId)?.emailAddressId;
+
+          if (!emailAddressId) {
+            console.error("❌ No email address ID found in sign-in result");
+            throw new Error("Unable to initiate password reset. Please try again.");
+          }
+
+          console.log("📧 Preparing password reset with email address ID:", emailAddressId);
+
+          await signIn.prepareFirstFactor({
+            strategy: "reset_password_email_code",
+            emailAddressId: emailAddressId,
+          });
+
+          toast({
+            title: "Password reset code sent",
+            description: "Check your email for a verification code.",
+          });
+          
+          // Switch to password reset mode
+          setNeedsMFA(true);
+          setMfaStrategy("reset_password_email_code");
+        } else {
+          // Fallback: try to use magic link for password reset
+          try {
+            const { startMagicLinkFlow } = signIn.createMagicLinkFlow();
+            await startMagicLinkFlow({
+              emailAddress: email,
+              redirectUrl: `${window.location.origin}/sign-in`,
+            });
+            
+            toast({
+              title: "Password reset email sent",
+              description: "Check your email for a password reset link.",
+            });
+          } catch (magicLinkError) {
+            console.error("❌ Magic link error:", magicLinkError);
+            toast({
+              title: "Password reset not available",
+              description: "Please contact support for password reset assistance.",
+              variant: "destructive",
+            });
+          }
+        }
+      } else {
+        // Fallback: try to use magic link for password reset
+        try {
+          const { startMagicLinkFlow } = signIn.createMagicLinkFlow();
+          await startMagicLinkFlow({
+            emailAddress: email,
+            redirectUrl: `${window.location.origin}/sign-in`,
+          });
+          
+          toast({
+            title: "Password reset email sent",
+            description: "Check your email for a password reset link.",
+          });
+        } catch (magicLinkError) {
+          console.error("❌ Magic link error:", magicLinkError);
+          // If magic link also fails, show generic message
+          toast({
+            title: "Password reset initiated",
+            description: "If an account exists with this email, you'll receive reset instructions.",
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("❌ Password reset error:", {
+        message: err.message,
+        errors: err.errors?.map((e: any) => ({
+          message: e.message,
+          code: e.code,
+        })),
+      });
+      
+      // Don't reveal if user exists (security best practice)
+      toast({
+        title: "Password reset initiated",
+        description: "If an account exists with this email, you'll receive reset instructions.",
+      });
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -201,35 +440,96 @@ function SignInContent() {
 
       <Card>
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="john@example.com"
-                disabled={isSubmitting}
-              />
-            </div>
+          {!needsMFA ? (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email Address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="john@example.com"
+                  disabled={isSubmitting}
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                disabled={isSubmitting}
-              />
-            </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-sm text-primary hover:text-primary/80 font-medium"
+                    disabled={isSubmitting}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  disabled={isSubmitting}
+                />
+              </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Signing in..." : "Sign In"}
-            </Button>
-          </form>
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Signing in..." : "Sign In"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleMFA} className="space-y-4">
+              <div className="text-center space-y-2 mb-4">
+                <h3 className="text-lg font-semibold">
+                  {mfaStrategy === "reset_password_email_code" 
+                    ? "Password Reset" 
+                    : "Two-Factor Authentication"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {mfaStrategy === "reset_password_email_code"
+                    ? "Enter the verification code sent to your email"
+                    : "Enter the verification code from your authenticator app"}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mfaCode">Verification Code</Label>
+                <Input
+                  id="mfaCode"
+                  type="text"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  maxLength={6}
+                  disabled={isSubmitting}
+                  className="text-center text-2xl tracking-widest"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setNeedsMFA(false);
+                    setMfaCode("");
+                    setMfaStrategy(null);
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Back
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isSubmitting || mfaCode.length !== 6}>
+                  {isSubmitting ? "Verifying..." : "Verify"}
+                </Button>
+              </div>
+            </form>
+          )}
         </CardContent>
       </Card>
 

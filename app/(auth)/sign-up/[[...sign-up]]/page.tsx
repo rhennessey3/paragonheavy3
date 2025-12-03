@@ -230,7 +230,15 @@ function SignUpContent() {
         description: "Please check your email for the verification code.",
       });
     } catch (err: any) {
-      console.error("❌ Sign-up error:", JSON.stringify(err, null, 2));
+      // Extract only safe error properties to avoid circular reference errors
+      console.error("❌ Sign-up error:", {
+        message: err.message,
+        errors: err.errors?.map((e: any) => ({
+          message: e.message,
+          longMessage: e.longMessage,
+          code: e.code,
+        })),
+      });
       const errorMessage = err.errors?.[0]?.message || "Something went wrong during sign up.";
       toast({
         title: "Error",
@@ -257,7 +265,12 @@ function SignUpContent() {
       if (completeSignUp.status !== "complete") {
         // The status can also be `abandoned` or `missing_requirements`
         // Please see https://clerk.com/docs/references/react/use-sign-up#result-status for  more information
-        console.log(JSON.stringify(completeSignUp, null, 2));
+        // Extract only safe properties to avoid circular reference errors
+        console.log("⚠️ Verification incomplete:", {
+          status: completeSignUp.status,
+          supportedFirstFactors: completeSignUp.supportedFirstFactors,
+          supportedSecondFactors: completeSignUp.supportedSecondFactors,
+        });
         toast({
           title: "Verification incomplete",
           description: "Please check the code and try again.",
@@ -310,7 +323,15 @@ function SignUpContent() {
         window.location.href = destination;
       }
     } catch (err: any) {
-      console.error(JSON.stringify(err, null, 2));
+      // Extract only safe error properties to avoid circular reference errors
+      console.error("❌ Verification error:", {
+        message: err.message,
+        errors: err.errors?.map((e: any) => ({
+          message: e.message,
+          longMessage: e.longMessage,
+          code: e.code,
+        })),
+      });
       const errorMessage = err.errors?.[0]?.message || "Verification failed.";
       toast({
         title: "Error",

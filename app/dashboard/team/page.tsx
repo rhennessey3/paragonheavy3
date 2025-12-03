@@ -115,7 +115,8 @@ export default function TeamPage() {
   const updateMemberRole = useMutation(api.users.updateMemberRole);
 
   const orgType = organization?.type || "carrier";
-  const isAdmin = userProfile?.role === "admin";
+  // Check for both "admin" (legacy) and "org:admin" (Clerk format) to handle role sync
+  const isAdmin = userProfile?.role === "admin" || userProfile?.role === "org:admin";
   const pendingInvitations = invitations?.filter((inv) => inv.status === "pending") || [];
 
   // Loading state
@@ -266,6 +267,13 @@ export default function TeamPage() {
 
     setUpdatingUserId(memberId);
     try {
+      console.log("🔄 Starting role update:", {
+        memberId,
+        newRole,
+        clerkOrgId: organization.clerkOrgId,
+        orgId: userProfile.orgId,
+      });
+
       // Step 1: Update role in Clerk (source of truth for auth)
       const clerkResponse = await fetch("/api/members/role", {
         method: "PATCH",
@@ -279,22 +287,30 @@ export default function TeamPage() {
 
       if (!clerkResponse.ok) {
         const errorData = await clerkResponse.json();
+        console.error("❌ Clerk role update failed:", errorData);
         throw new Error(errorData.error || "Failed to update role in Clerk");
       }
 
+      const clerkData = await clerkResponse.json();
+      console.log("✅ Clerk role updated:", clerkData);
+
       // Step 2: Update role in Convex (for our app's queries)
+      // We update Convex immediately to avoid waiting for webhook
+      // The webhook will also fire, but since we're storing the same value, it should be idempotent
       await updateMemberRole({
         orgId: userProfile.orgId,
         userId: memberId,
         newRole: newRole as any,
       });
 
+      console.log("✅ Convex role updated:", { memberId, newRole });
+
       toast({
         title: "Success",
         description: "Member role updated successfully",
       });
     } catch (error: any) {
-      console.error("Role update error:", error);
+      console.error("❌ Role update error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to update member role",

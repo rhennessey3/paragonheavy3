@@ -13,6 +13,8 @@ const isPublicRoute = createRouteMatcher([
   '/api/onboarding-complete(.*)',
   '/api/invitations(.*)',
   '/api/roles(.*)',
+  '/api/password-reset(.*)',
+  '/api/sync-roles(.*)',
   '/invite(.*)'
 ]);
 

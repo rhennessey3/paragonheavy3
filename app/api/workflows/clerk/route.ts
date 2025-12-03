@@ -86,11 +86,26 @@ export const { POST } = serve<WebhookEvent>(
                 await context.run("update-org-membership", async () => {
                     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
 
+                    // Extract role from the event - check multiple possible locations
+                    // Clerk webhook structure may vary, so we check event.data.role first,
+                    // then fall back to event.data.public_metadata or other locations
+                    const roleFromEvent = event.data.role || 
+                                         event.data.public_metadata?.role ||
+                                         event.data.organization?.role;
+
                     console.log(`👥 ${event.type}:`, {
                         clerkUserId,
                         orgId: clerkOrgId,
-                        role: event.data.role,
+                        role: roleFromEvent,
+                        eventDataKeys: Object.keys(event.data || {}),
+                        fullEventData: JSON.stringify(event.data, null, 2),
                     });
+
+                    if (!roleFromEvent) {
+                        console.error(`❌ No role found in webhook event for ${event.type}`);
+                        console.log("Full event structure:", JSON.stringify(event, null, 2));
+                        throw new Error(`No role found in webhook event - will retry`);
+                    }
 
                     const response = await fetch(`${convexUrl}/api/mutation`, {
                         method: "POST",
@@ -102,7 +117,7 @@ export const { POST } = serve<WebhookEvent>(
                             args: {
                                 clerkUserId,
                                 clerkOrgId,
-                                orgRole: event.data.role,
+                                orgRole: roleFromEvent,
                             },
                             format: "json",
                         }),

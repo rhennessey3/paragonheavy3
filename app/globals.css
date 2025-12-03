@@ -53,3 +53,7 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* AG Grid Styles - Legacy CSS-based theming */
+@import "ag-grid-community/styles/ag-grid.css";
+@import "ag-grid-community/styles/ag-theme-quartz.css";

@@ -248,14 +248,16 @@ export const updateOrgMembership = mutation({
       throw new Error(`Organization not found for clerkOrgId: ${args.clerkOrgId}. This will trigger a retry.`);
     }
 
-    // Map Clerk role to our role system
-    const mappedRole = args.orgRole === "org:admin" ? "admin" : args.orgRole === "org:member" ? "member" : "operator";
+    // Store the full Clerk role key to maintain consistency with Clerk
+    // This ensures webhooks preserve the exact role (e.g., "org:dispatch", "org:heavy_haul_rig_operator")
+    // instead of mapping to generic values like "operator"
+    const roleToStore = args.orgRole;
 
     // Update the user profile with org info
     await ctx.db.patch(userProfile._id, {
       clerkOrgId: args.clerkOrgId,
       orgId: organization._id,
-      role: mappedRole,
+      role: roleToStore,
       lastActiveAt: Date.now(),
     });
 
@@ -303,13 +305,14 @@ export const updateMemberRole = mutation({
     }
 
     // Check if the current user is an admin of this organization
+    // Support both "admin" (legacy) and "org:admin" (Clerk format) for role sync
     const currentUserProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", session.sub))
       .filter((q) => q.eq(q.field("orgId"), args.orgId))
       .first();
 
-    if (!currentUserProfile || currentUserProfile.role !== "admin") {
+    if (!currentUserProfile || (currentUserProfile.role !== "admin" && currentUserProfile.role !== "org:admin")) {
       throw new Error("Unauthorized: Only admins can update member roles");
     }
 

@@ -1,11 +1,44 @@
-import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from "next/server";
+import { auth, getAuth } from "@clerk/nextjs/server";
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
-    const { userId: currentUserId } = await auth();
+    // Try standard auth() first
+    let authObj = await auth();
+    let currentUserId = authObj.userId;
+
+    // If that fails, try getAuth(request)
+    if (!currentUserId) {
+      console.log("⚠️ auth() returned null, trying getAuth(request)");
+      const reqAuth = getAuth(request);
+      if (reqAuth.userId) {
+        currentUserId = reqAuth.userId;
+        console.log("✅ getAuth(request) succeeded");
+      }
+    }
+
+    // Manual token parsing if auth() fails but header exists
+    if (!currentUserId) {
+      const token = request.headers.get("x-clerk-auth-token") || 
+                   request.headers.get("authorization")?.replace("Bearer ", "");
+      if (token) {
+        try {
+          const parts = token.split(".");
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]));
+            if (payload.sub) {
+              currentUserId = payload.sub;
+              console.log("✅ Recovered userId from token:", currentUserId);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to decode token:", e);
+        }
+      }
+    }
     
     if (!currentUserId) {
+      console.error("❌ No userId found after all auth attempts");
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
@@ -26,6 +59,7 @@ export async function PATCH(request: Request) {
       clerkUserId,
       newRole,
       updatedBy: currentUserId,
+      hasSecretKey: !!process.env.CLERK_SECRET_KEY,
     });
 
     // Call Clerk's API to update the organization membership role
@@ -75,4 +109,5 @@ export async function PATCH(request: Request) {
     );
   }
 }
+
 
