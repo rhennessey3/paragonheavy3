@@ -78,6 +78,15 @@ export default defineSchema({
       phone: v.string(),
       email: v.string(),
     })),
+    route: v.optional(v.object({
+      waypoints: v.array(v.object({
+        lat: v.number(),
+        lng: v.number(),
+        address: v.optional(v.string()),
+        order: v.number(),
+      })),
+      snappedCoordinates: v.array(v.array(v.number())), // Array of [lng, lat] pairs for the route line
+    })),
   })
     .index("by_orgId", ["orgId"])
     .index("by_createdBy", ["createdBy"])

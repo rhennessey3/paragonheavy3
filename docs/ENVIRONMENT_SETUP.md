@@ -66,6 +66,7 @@ No production environment files or configurations are permitted.
 |----------|---------|---------|
 | `NEXT_PUBLIC_APP_URL` | Custom domain | `http://localhost:3000` |
 | `LOG_LEVEL` | Logging verbosity | `info` |
+| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` | Mapbox access token for map features | None (required for route planning) |
 
 ## URL Configuration
 

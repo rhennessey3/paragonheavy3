@@ -33,6 +33,15 @@ export const createLoad = mutation({
       phone: v.string(),
       email: v.string(),
     })),
+    route: v.optional(v.object({
+      waypoints: v.array(v.object({
+        lat: v.number(),
+        lng: v.number(),
+        address: v.optional(v.string()),
+        order: v.number(),
+      })),
+      snappedCoordinates: v.array(v.array(v.number())),
+    })),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -50,6 +59,7 @@ export const createLoad = mutation({
       deliveryDate: args.deliveryDate,
       specialRequirements: args.specialRequirements,
       contactInfo: args.contactInfo,
+      route: args.route,
       createdAt: now,
       updatedAt: now,
     });
@@ -295,6 +305,15 @@ export const updateLoad = mutation({
       name: v.string(),
       phone: v.string(),
       email: v.string(),
+    })),
+    route: v.optional(v.object({
+      waypoints: v.array(v.object({
+        lat: v.number(),
+        lng: v.number(),
+        address: v.optional(v.string()),
+        order: v.number(),
+      })),
+      snappedCoordinates: v.array(v.array(v.number())),
     })),
   },
   handler: async (ctx, args) => {

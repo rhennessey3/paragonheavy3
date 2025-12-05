@@ -8,13 +8,93 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, ArrowRight, Pencil } from "lucide-react";
+import { Search, Plus, ArrowRight, Pencil, MapPin, Flag, Upload, AlertTriangle, PlusCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { RouteMap } from "@/components/map/RouteMap";
+import { RouteSegmentsCard } from "@/components/map/RouteSegmentsCard";
+import type { Waypoint } from "@/lib/mapbox";
 
 export default function CreateNewJobPage() {
   const router = useRouter();
   const { user } = useUser();
   const [currentStep, setCurrentStep] = useState(1);
   const [sameAsCustomer, setSameAsCustomer] = useState(false);
+  const [routeWaypoints, setRouteWaypoints] = useState<Waypoint[]>([]);
+  const [routeSnappedCoordinates, setRouteSnappedCoordinates] = useState<number[][]>([]);
+  const [isAddingSegment, setIsAddingSegment] = useState(false);
+
+  // Load details state
+  interface LoadItem {
+    id: number;
+    description: string;
+    height: string;
+    width: string;
+    length: string;
+    weight: string;
+    originAddress: string;
+    destinationAddress: string;
+    oversized: boolean;
+    overweight: boolean;
+  }
+
+  const [loads, setLoads] = useState<LoadItem[]>([
+    {
+      id: 1,
+      description: "",
+      height: "",
+      width: "",
+      length: "",
+      weight: "",
+      originAddress: "",
+      destinationAddress: "",
+      oversized: false,
+      overweight: false,
+    },
+  ]);
+
+  const addLoad = () => {
+    setLoads([
+      ...loads,
+      {
+        id: loads.length + 1,
+        description: "",
+        height: "",
+        width: "",
+        length: "",
+        weight: "",
+        originAddress: "",
+        destinationAddress: "",
+        oversized: false,
+        overweight: false,
+      },
+    ]);
+  };
+
+  const removeLoad = (id: number) => {
+    if (loads.length > 1) {
+      setLoads(loads.filter((load) => load.id !== id));
+    }
+  };
+
+  const updateLoad = (id: number, field: keyof LoadItem, value: string | boolean) => {
+    setLoads(
+      loads.map((load) =>
+        load.id === id ? { ...load, [field]: value } : load
+      )
+    );
+  };
+
+  // Calculate job summary
+  const totalWeight = loads.reduce((sum, load) => sum + (parseFloat(load.weight) || 0), 0);
+  const maxDimensions = loads.reduce(
+    (max, load) => ({
+      height: Math.max(max.height, parseFloat(load.height) || 0),
+      width: Math.max(max.width, parseFloat(load.width) || 0),
+      length: Math.max(max.length, parseFloat(load.length) || 0),
+    }),
+    { height: 0, width: 0, length: 0 }
+  );
+  const hasOversized = loads.some((load) => load.oversized);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -48,16 +128,17 @@ export default function CreateNewJobPage() {
   const handleSaveAndContinue = () => {
     // TODO: Implement save and continue to next step
     console.log("Save & Continue", formData);
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       setCurrentStep(currentStep + 1);
     }
   };
 
   const steps = [
     { number: 1, label: "Basic Info" },
-    { number: 2, label: "Route & Stops" },
-    { number: 3, label: "Equipment" },
-    { number: 4, label: "Documents" },
+    { number: 2, label: "Load Details" },
+    { number: 3, label: "Route & Stops" },
+    { number: 4, label: "Equipment" },
+    { number: 5, label: "Documents" },
   ];
 
   return (
@@ -102,12 +183,22 @@ export default function CreateNewJobPage() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto bg-gray-50">
-        <div className="max-w-4xl mx-auto px-6 py-8">
+        <div className={`mx-auto px-6 py-8 ${currentStep === 3 ? 'max-w-full' : 'max-w-4xl'}`}>
           {/* Title and Description */}
           <div className="mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">New Job - Basic Info</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+              {currentStep === 1 && "New Job - Basic Info"}
+              {currentStep === 2 && "New Job: Load Details"}
+              {currentStep === 3 && "Route & Stops"}
+              {currentStep === 4 && "Equipment"}
+              {currentStep === 5 && "Documents"}
+            </h2>
             <p className="text-gray-600">
-              Fill in the essential details to start creating a new job.
+              {currentStep === 1 && "Fill in the essential details to start creating a new job."}
+              {currentStep === 2 && "Define the primary load(s) for a new heavy haul job, including dimensions, weight, and specific origin and destination points."}
+              {currentStep === 3 && "Click on the map to add waypoints. Points will automatically snap to the nearest road."}
+              {currentStep === 4 && "Specify equipment requirements for this job."}
+              {currentStep === 5 && "Upload and manage documents for this job."}
             </p>
           </div>
 
@@ -130,6 +221,270 @@ export default function CreateNewJobPage() {
 
           {/* Form Sections */}
           <div className="space-y-8">
+            {/* Step 2: Load Details */}
+            {currentStep === 2 && (
+              <div className="flex gap-6">
+                {/* Load Information */}
+                <div className="flex-1">
+                  <div className="bg-gray-50 rounded-lg p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-6">Load Information</h3>
+                    
+                    <div className="space-y-6">
+                      {loads.map((load, index) => (
+                        <div
+                          key={load.id}
+                          className="bg-white rounded-lg p-6 border border-gray-200"
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-base font-semibold text-gray-900">
+                              Load {index + 1}
+                            </h4>
+                            {loads.length > 1 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeLoad(load.id)}
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                Load Description
+                              </Label>
+                              <Input
+                                placeholder="Caterpillar 395 Excavator"
+                                value={load.description}
+                                onChange={(e) => updateLoad(load.id, "description", e.target.value)}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                  Height (ft)
+                                </Label>
+                                <Input
+                                  type="number"
+                                  placeholder="13.5"
+                                  value={load.height}
+                                  onChange={(e) => updateLoad(load.id, "height", e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                  Width (ft)
+                                </Label>
+                                <Input
+                                  type="number"
+                                  placeholder="12"
+                                  value={load.width}
+                                  onChange={(e) => updateLoad(load.id, "width", e.target.value)}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                  Length (ft)
+                                </Label>
+                                <Input
+                                  type="number"
+                                  placeholder="55"
+                                  value={load.length}
+                                  onChange={(e) => updateLoad(load.id, "length", e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                  Weight (lbs)
+                                </Label>
+                                <Input
+                                  type="number"
+                                  placeholder="207,000"
+                                  value={load.weight}
+                                  onChange={(e) => updateLoad(load.id, "weight", e.target.value)}
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                Origin Address
+                              </Label>
+                              <div className="relative">
+                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input
+                                  placeholder="8201 W Plank Rd, Peoria, IL 61604"
+                                  value={load.originAddress}
+                                  onChange={(e) => updateLoad(load.id, "originAddress", e.target.value)}
+                                  className="pl-10"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                Destination Address
+                              </Label>
+                              <div className="relative">
+                                <Flag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input
+                                  placeholder="123 Main St, Houston, TX 77002"
+                                  value={load.destinationAddress}
+                                  onChange={(e) => updateLoad(load.id, "destinationAddress", e.target.value)}
+                                  className="pl-10"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                Initial Load Photos
+                              </Label>
+                              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer">
+                                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
+                                <p className="text-xs text-gray-400 mt-1">PNG, JPG, or GIF (max. 10MB)</p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-4 pt-4 border-t border-gray-200">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium text-gray-900">Oversized</div>
+                                  <div className="text-sm text-gray-500">Flag if dimensions exceed standard limits.</div>
+                                </div>
+                                <Switch
+                                  checked={load.oversized}
+                                  onCheckedChange={(checked) => updateLoad(load.id, "oversized", checked)}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium text-gray-900">Overweight</div>
+                                  <div className="text-sm text-gray-500">Flag if weight exceeds standard limits.</div>
+                                </div>
+                                <Switch
+                                  checked={load.overweight}
+                                  onCheckedChange={(checked) => updateLoad(load.id, "overweight", checked)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      <Button
+                        variant="outline"
+                        onClick={addLoad}
+                        className="w-full border-gray-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                      >
+                        <PlusCircle className="h-4 w-4 mr-2" />
+                        Add Another Load
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Job Summary Sidebar */}
+                <div className="w-80">
+                  <div className="bg-white rounded-lg p-6 border border-gray-200 sticky top-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Summary</h3>
+                    
+                    <div className="space-y-4">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Total Number of Loads</span>
+                        <span className="font-semibold text-gray-900">{loads.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Gross Combined Weight</span>
+                        <span className="font-semibold text-gray-900">
+                          {totalWeight > 0 ? `${totalWeight.toLocaleString()} lbs` : "-"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Maximum Dimensions</span>
+                        <span className="font-semibold text-gray-900">
+                          {maxDimensions.height > 0 || maxDimensions.width > 0 || maxDimensions.length > 0
+                            ? `${maxDimensions.height}' x ${maxDimensions.width}' x ${maxDimensions.length}'`
+                            : "-"}
+                        </span>
+                      </div>
+
+                      {hasOversized && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-sm text-yellow-800">
+                              Oversized load requires special permits.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Route & Stops */}
+            {currentStep === 3 && (
+              <div className="relative flex flex-col" style={{ height: 'calc(100vh - 320px)' }}>
+                {/* Map Container */}
+                <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm flex-1 flex flex-col h-full">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Route Planning</h3>
+                  <div className="flex-1 w-full rounded-lg overflow-hidden relative">
+                    <RouteMap
+                      waypoints={routeWaypoints}
+                      onWaypointsChange={(waypoints, snappedCoords) => {
+                        setRouteWaypoints(waypoints);
+                        if (snappedCoords) {
+                          setRouteSnappedCoordinates(snappedCoords);
+                        }
+                      }}
+                      isAddingSegment={isAddingSegment}
+                      onSegmentAdded={() => {
+                        setIsAddingSegment(false);
+                      }}
+                    />
+                    
+                    {/* Route Segments Card Overlay */}
+                    <div className="absolute top-4 left-4 z-10 w-96 max-w-[calc(100%-2rem)]">
+                      <RouteSegmentsCard
+                        waypoints={routeWaypoints}
+                        createdAt={new Date()}
+                        lastEdited={new Date()}
+                        isAddingSegment={isAddingSegment}
+                        onAddSegment={() => {
+                          setIsAddingSegment(true);
+                        }}
+                        onDoneAdding={() => {
+                          setIsAddingSegment(false);
+                        }}
+                        onRemoveWaypoint={(index) => {
+                          const updated = routeWaypoints.filter((_, i) => i !== index);
+                          const reordered = updated.map((wp, i) => ({
+                            ...wp,
+                            order: i + 1,
+                          }));
+                          setRouteWaypoints(reordered);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 1: Basic Info */}
+            {currentStep === 1 && (
+              <>
             {/* Job Details */}
             <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900 mb-6">Job Details</h3>
@@ -356,6 +711,24 @@ export default function CreateNewJobPage() {
                 </div>
               </div>
             </div>
+            </>
+            )}
+
+            {/* Step 4: Equipment - Placeholder */}
+            {currentStep === 4 && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Equipment</h3>
+                <p className="text-gray-600">Equipment selection coming soon...</p>
+              </div>
+            )}
+
+            {/* Step 5: Documents - Placeholder */}
+            {currentStep === 5 && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Documents</h3>
+                <p className="text-gray-600">Document upload coming soon...</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
