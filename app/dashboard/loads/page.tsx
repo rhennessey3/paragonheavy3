@@ -11,7 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AgGridReact } from "ag-grid-react";
 import { ColDef, ICellRendererParams, ModuleRegistry, AllCommunityModule } from "ag-grid-community";
-import { Search, Filter, ChevronUp, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Filter, ChevronUp, Plus, ChevronLeft, ChevronRight, ChevronDown, Briefcase, FileText } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -296,13 +302,31 @@ export default function JobsPage() {
           {/* Header */}
           <div className="flex items-center justify-between px-6 pt-6 pb-4">
             <h1 className="text-3xl font-bold text-gray-900">Jobs</h1>
-            <Button 
-              onClick={() => router.push("/dashboard/loads/new")}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Create New Job
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create New
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem 
+                  onClick={() => router.push("/dashboard/loads/new")}
+                  className="cursor-pointer"
+                >
+                  <Briefcase className="mr-2 h-4 w-4" />
+                  Create New Job
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => router.push("/dashboard/loads/new-bid")}
+                  className="cursor-pointer"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Create New Bid
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Tabs */}

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, ArrowRight, Pencil, MapPin, Flag, Upload, AlertTriangle, PlusCircle, FolderOpen, ChevronRight, Send, ExternalLink, Bell, Settings2 } from "lucide-react";
+import { Search, Plus, Pencil, MapPin, Flag, Upload, AlertTriangle, PlusCircle, FolderOpen, ChevronRight, Send, ExternalLink, Bell, Settings2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { RouteMap } from "@/components/map/RouteMap";
 import { RouteSegmentsCard } from "@/components/map/RouteSegmentsCard";
@@ -18,7 +18,6 @@ import type { Waypoint } from "@/lib/mapbox";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 
-// Format role for display (remove "org:" prefix and capitalize)
 const formatRole = (role?: string) => {
   if (!role) return "Member";
   const cleanRole = role.replace(/^org:/, "");
@@ -28,12 +27,11 @@ const formatRole = (role?: string) => {
     .join(" ");
 };
 
-export default function CreateNewJobPage() {
+export default function CreateNewBidPage() {
   const router = useRouter();
   const { user } = useUser();
   const userId = user?.id;
 
-  // Get user profile and organization
   const userProfile = useQuery(
     api.users.getUserProfile,
     userId ? { clerkUserId: userId } : "skip"
@@ -53,7 +51,6 @@ export default function CreateNewJobPage() {
   const [routeSnappedCoordinates, setRouteSnappedCoordinates] = useState<number[][]>([]);
   const [isAddingSegment, setIsAddingSegment] = useState(false);
 
-  // Load details state
   interface LoadItem {
     id: number;
     description: string;
@@ -114,7 +111,6 @@ export default function CreateNewJobPage() {
     );
   };
 
-  // Calculate job summary
   const totalWeight = loads.reduce((sum, load) => sum + (parseFloat(load.weight) || 0), 0);
   const maxDimensions = loads.reduce(
     (max, load) => ({
@@ -126,11 +122,10 @@ export default function CreateNewJobPage() {
   );
   const hasOversized = loads.some((load) => load.oversized);
 
-  // Form state
   const [formData, setFormData] = useState({
-    jobTitle: "",
-    jobId: "SYS-GEN-12345",
-    jobDescription: "",
+    bidTitle: "",
+    bidId: "BID-GEN-12345",
+    bidDescription: "",
     customerName: "",
     contactName: "",
     contactPhone: "",
@@ -146,33 +141,21 @@ export default function CreateNewJobPage() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCancel = () => {
-    router.back();
-  };
-
   const handleSaveDraft = () => {
-    // TODO: Implement save as draft
     console.log("Save as draft", formData);
   };
 
   const handleSaveAndContinue = () => {
-    // TODO: Implement save and continue to next step
     console.log("Save & Continue", formData);
-    if (currentStep < 9) {
+    if (currentStep < 3) {
       setCurrentStep(currentStep + 1);
     }
   };
 
   const steps = [
     { number: 1, label: "Basic Info" },
-    { number: 2, label: "Personnel" },
-    { number: 3, label: "Load Details" },
-    { number: 4, label: "Route & Stops" },
-    { number: 5, label: "Equipment" },
-    { number: 6, label: "Work Orders" },
-    { number: 7, label: "Permits" },
-    { number: 8, label: "Reimbursements" },
-    { number: 9, label: "Run Logs" },
+    { number: 2, label: "Load Details" },
+    { number: 3, label: "Route & Stops" },
   ];
 
   return (
@@ -193,7 +176,7 @@ export default function CreateNewJobPage() {
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
-                Work Order Details
+                Bid Details
               </span>
             </Badge>
           </div>
@@ -232,22 +215,22 @@ export default function CreateNewJobPage() {
         </div>
       </div>
 
-      {/* Job Header Section */}
+      {/* Bid Header Section */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-start justify-between">
           {/* Left: Title, Status Badge, and Metadata */}
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-bold text-gray-900">
-                {formData.jobTitle || "New Job"}
+                {formData.bidTitle || "New Bid"}
               </h1>
-              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-0 px-3 py-1 flex items-center gap-1.5">
+              <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-0 px-3 py-1 flex items-center gap-1.5">
                 <Settings2 className="h-3.5 w-3.5" />
-                In Progress
+                Draft
               </Badge>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="font-medium text-gray-700">#{formData.jobId}</span>
+              <span className="font-medium text-gray-700">#{formData.bidId}</span>
               <span className="text-gray-300">•</span>
               <span>Created at: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               <span className="text-gray-300">•</span>
@@ -263,14 +246,14 @@ export default function CreateNewJobPage() {
               className="border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               <Send className="mr-2 h-4 w-4" />
-              For Review
+              Submit Bid
             </Button>
             <Button
               onClick={handleSaveAndContinue}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              Create Invoice
+              Save & Continue
             </Button>
           </div>
         </div>
@@ -297,20 +280,244 @@ export default function CreateNewJobPage() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto bg-gray-50">
-        <div className={`mx-auto px-6 py-8 ${currentStep === 4 ? 'max-w-full' : 'max-w-4xl'}`}>
+        <div className={`mx-auto px-6 py-8 ${currentStep === 3 ? 'max-w-full' : 'max-w-4xl'}`}>
 
           {/* Form Sections */}
           <div className="space-y-8">
-            {/* Step 2: Personnel */}
-            {currentStep === 2 && (
-              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Personnel</h3>
-                <p className="text-gray-600">Personnel assignment coming soon...</p>
-              </div>
+            {/* Step 1: Basic Info */}
+            {currentStep === 1 && (
+              <>
+                {/* Bid Details */}
+                <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Bid Details</h3>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <Label htmlFor="bidTitle" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Bid Title / Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="bidTitle"
+                        placeholder="e.g., Wind Turbine Transport Bid"
+                        value={formData.bidTitle}
+                        onChange={(e) => handleInputChange("bidTitle", e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="bidId" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Bid ID
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="bidId"
+                          value={formData.bidId}
+                          onChange={(e) => handleInputChange("bidId", e.target.value)}
+                          className="w-full pr-10"
+                        />
+                        <button
+                          type="button"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="bidDescription" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Bid Description
+                      </Label>
+                      <Textarea
+                        id="bidDescription"
+                        placeholder="Provide a high-level overview, special instructions, or key details."
+                        value={formData.bidDescription}
+                        onChange={(e) => handleInputChange("bidDescription", e.target.value)}
+                        className="w-full min-h-[120px]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Customer Information */}
+                <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Customer Information</h3>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <Label htmlFor="customerName" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Customer Name <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="relative flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <Input
+                            id="customerName"
+                            placeholder="Search for an existing customer or add a new one"
+                            value={formData.customerName}
+                            onChange={(e) => handleInputChange("customerName", e.target.value)}
+                            className="w-full pl-10"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="contactName" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Contact Name
+                      </Label>
+                      <Input
+                        id="contactName"
+                        placeholder="e.g., Eleanor Pena"
+                        value={formData.contactName}
+                        onChange={(e) => handleInputChange("contactName", e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="contactPhone" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Contact Phone
+                      </Label>
+                      <Input
+                        id="contactPhone"
+                        placeholder="e.g., (555) 123-4567"
+                        value={formData.contactPhone}
+                        onChange={(e) => handleInputChange("contactPhone", e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="contactEmail" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Contact Email
+                      </Label>
+                      <Input
+                        id="contactEmail"
+                        type="email"
+                        placeholder="e.g., eleanor.pena@constructcorp.com"
+                        value={formData.contactEmail}
+                        onChange={(e) => handleInputChange("contactEmail", e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Shipper Information */}
+                <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900">Shipper Information</h3>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="sameAsCustomer"
+                        checked={sameAsCustomer}
+                        onChange={(e) => {
+                          setSameAsCustomer(e.target.checked);
+                          if (e.target.checked) {
+                            setFormData(prev => ({
+                              ...prev,
+                              shipperName: prev.customerName,
+                              shipperContactName: prev.contactName,
+                              shipperPhone: prev.contactPhone,
+                              shipperEmail: prev.contactEmail,
+                            }));
+                          }
+                        }}
+                      />
+                      <Label htmlFor="sameAsCustomer" className="text-sm font-medium text-gray-700 cursor-pointer">
+                        Same as customer
+                      </Label>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <Label htmlFor="shipperName" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Shipper Name
+                      </Label>
+                      <Input
+                        id="shipperName"
+                        placeholder="Enter shipper name"
+                        value={formData.shipperName}
+                        onChange={(e) => handleInputChange("shipperName", e.target.value)}
+                        disabled={sameAsCustomer}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="shipperContactName" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Contact Name
+                      </Label>
+                      <Input
+                        id="shipperContactName"
+                        placeholder="Enter contact name"
+                        value={formData.shipperContactName}
+                        onChange={(e) => handleInputChange("shipperContactName", e.target.value)}
+                        disabled={sameAsCustomer}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="shipperAddress" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Address
+                      </Label>
+                      <Input
+                        id="shipperAddress"
+                        placeholder="Enter shipper address"
+                        value={formData.shipperAddress}
+                        onChange={(e) => handleInputChange("shipperAddress", e.target.value)}
+                        disabled={sameAsCustomer}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="shipperPhone" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Phone
+                      </Label>
+                      <Input
+                        id="shipperPhone"
+                        placeholder="Enter phone number"
+                        value={formData.shipperPhone}
+                        onChange={(e) => handleInputChange("shipperPhone", e.target.value)}
+                        disabled={sameAsCustomer}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="shipperEmail" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Email
+                      </Label>
+                      <Input
+                        id="shipperEmail"
+                        type="email"
+                        placeholder="Enter email address"
+                        value={formData.shipperEmail}
+                        onChange={(e) => handleInputChange("shipperEmail", e.target.value)}
+                        disabled={sameAsCustomer}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
-            {/* Step 3: Load Details */}
-            {currentStep === 3 && (
+            {/* Step 2: Load Details */}
+            {currentStep === 2 && (
               <div className="flex gap-6">
                 {/* Load Information */}
                 <div className="flex-1">
@@ -480,10 +687,10 @@ export default function CreateNewJobPage() {
                   </div>
                 </div>
 
-                {/* Job Summary Sidebar */}
+                {/* Bid Summary Sidebar */}
                 <div className="w-80">
                   <div className="bg-white rounded-lg p-6 border border-gray-200 sticky top-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Summary</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Bid Summary</h3>
                     
                     <div className="space-y-4">
                       <div className="flex justify-between">
@@ -521,8 +728,8 @@ export default function CreateNewJobPage() {
               </div>
             )}
 
-            {/* Step 4: Route & Stops */}
-            {currentStep === 4 && (
+            {/* Step 3: Route & Stops */}
+            {currentStep === 3 && (
               <div className="relative flex flex-col" style={{ height: 'calc(100vh - 320px)' }}>
                 {/* Map Container */}
                 <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm flex-1 flex flex-col h-full">
@@ -569,282 +776,9 @@ export default function CreateNewJobPage() {
                 </div>
               </div>
             )}
-
-            {/* Step 1: Basic Info */}
-            {currentStep === 1 && (
-              <>
-            {/* Job Details */}
-            <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">Job Details</h3>
-              
-              <div className="space-y-6">
-                <div>
-                  <Label htmlFor="jobTitle" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Job Title / Name <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="jobTitle"
-                    placeholder="e.g., Wind Turbine Transport"
-                    value={formData.jobTitle}
-                    onChange={(e) => handleInputChange("jobTitle", e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="jobId" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Job ID
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="jobId"
-                      value={formData.jobId}
-                      onChange={(e) => handleInputChange("jobId", e.target.value)}
-                      className="w-full pr-10"
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="jobDescription" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Job Description
-                  </Label>
-                  <Textarea
-                    id="jobDescription"
-                    placeholder="Provide a high-level overview, special instructions, or key details."
-                    value={formData.jobDescription}
-                    onChange={(e) => handleInputChange("jobDescription", e.target.value)}
-                    className="w-full min-h-[120px]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Customer Information */}
-            <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">Customer Information</h3>
-              
-              <div className="space-y-6">
-                <div>
-                  <Label htmlFor="customerName" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Customer Name <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="relative flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="customerName"
-                        placeholder="Search for an existing customer or add a new one"
-                        value={formData.customerName}
-                        onChange={(e) => handleInputChange("customerName", e.target.value)}
-                        className="w-full pl-10"
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="contactName" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Contact Name
-                  </Label>
-                  <Input
-                    id="contactName"
-                    placeholder="e.g., Eleanor Pena"
-                    value={formData.contactName}
-                    onChange={(e) => handleInputChange("contactName", e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="contactPhone" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Contact Phone
-                  </Label>
-                  <Input
-                    id="contactPhone"
-                    placeholder="e.g., (555) 123-4567"
-                    value={formData.contactPhone}
-                    onChange={(e) => handleInputChange("contactPhone", e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="contactEmail" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Contact Email
-                  </Label>
-                  <Input
-                    id="contactEmail"
-                    type="email"
-                    placeholder="e.g., eleanor.pena@constructcorp.com"
-                    value={formData.contactEmail}
-                    onChange={(e) => handleInputChange("contactEmail", e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Shipper Information */}
-            <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Shipper Information</h3>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="sameAsCustomer"
-                    checked={sameAsCustomer}
-                    onChange={(e) => {
-                      setSameAsCustomer(e.target.checked);
-                      if (e.target.checked) {
-                        setFormData(prev => ({
-                          ...prev,
-                          shipperName: prev.customerName,
-                          shipperContactName: prev.contactName,
-                          shipperPhone: prev.contactPhone,
-                          shipperEmail: prev.contactEmail,
-                        }));
-                      }
-                    }}
-                  />
-                  <Label htmlFor="sameAsCustomer" className="text-sm font-medium text-gray-700 cursor-pointer">
-                    Same as customer
-                  </Label>
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                <div>
-                  <Label htmlFor="shipperName" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Shipper Name
-                  </Label>
-                  <Input
-                    id="shipperName"
-                    placeholder="Enter shipper name"
-                    value={formData.shipperName}
-                    onChange={(e) => handleInputChange("shipperName", e.target.value)}
-                    disabled={sameAsCustomer}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="shipperContactName" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Contact Name
-                  </Label>
-                  <Input
-                    id="shipperContactName"
-                    placeholder="Enter contact name"
-                    value={formData.shipperContactName}
-                    onChange={(e) => handleInputChange("shipperContactName", e.target.value)}
-                    disabled={sameAsCustomer}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="shipperAddress" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Address
-                  </Label>
-                  <Input
-                    id="shipperAddress"
-                    placeholder="Enter shipper address"
-                    value={formData.shipperAddress}
-                    onChange={(e) => handleInputChange("shipperAddress", e.target.value)}
-                    disabled={sameAsCustomer}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="shipperPhone" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Phone
-                  </Label>
-                  <Input
-                    id="shipperPhone"
-                    placeholder="Enter phone number"
-                    value={formData.shipperPhone}
-                    onChange={(e) => handleInputChange("shipperPhone", e.target.value)}
-                    disabled={sameAsCustomer}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="shipperEmail" className="text-sm font-medium text-gray-700 mb-2 block">
-                    Email
-                  </Label>
-                  <Input
-                    id="shipperEmail"
-                    type="email"
-                    placeholder="Enter email address"
-                    value={formData.shipperEmail}
-                    onChange={(e) => handleInputChange("shipperEmail", e.target.value)}
-                    disabled={sameAsCustomer}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </div>
-            </>
-            )}
-
-            {/* Step 5: Equipment - Placeholder */}
-            {currentStep === 5 && (
-              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Equipment</h3>
-                <p className="text-gray-600">Equipment selection coming soon...</p>
-              </div>
-            )}
-
-            {/* Step 6: Work Orders - Placeholder */}
-            {currentStep === 6 && (
-              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Work Orders</h3>
-                <p className="text-gray-600">Work orders management coming soon...</p>
-              </div>
-            )}
-
-            {/* Step 7: Permits - Placeholder */}
-            {currentStep === 7 && (
-              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Permits</h3>
-                <p className="text-gray-600">Permits management coming soon...</p>
-              </div>
-            )}
-
-            {/* Step 8: Reimbursements - Placeholder */}
-            {currentStep === 8 && (
-              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Reimbursements</h3>
-                <p className="text-gray-600">Reimbursements tracking coming soon...</p>
-              </div>
-            )}
-
-            {/* Step 9: Run Logs - Placeholder */}
-            {currentStep === 9 && (
-              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Run Logs</h3>
-                <p className="text-gray-600">Run logs coming soon...</p>
-              </div>
-            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-

@@ -11,6 +11,7 @@
 import type * as addRealData from "../addRealData.js";
 import type * as auth from "../auth.js";
 import type * as clearConvexData from "../clearConvexData.js";
+import type * as compliance from "../compliance.js";
 import type * as debug from "../debug.js";
 import type * as debug_invite from "../debug_invite.js";
 import type * as debug_state from "../debug_state.js";
@@ -19,6 +20,9 @@ import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
 import type * as loads from "../loads.js";
 import type * as organizations from "../organizations.js";
+import type * as permitTypes from "../permitTypes.js";
+import type * as stateFields from "../stateFields.js";
+import type * as systemFields from "../systemFields.js";
 import type * as users from "../users.js";
 
 import type {
@@ -31,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   addRealData: typeof addRealData;
   auth: typeof auth;
   clearConvexData: typeof clearConvexData;
+  compliance: typeof compliance;
   debug: typeof debug;
   debug_invite: typeof debug_invite;
   debug_state: typeof debug_state;
@@ -39,6 +44,9 @@ declare const fullApi: ApiFromModules<{
   invitations: typeof invitations;
   loads: typeof loads;
   organizations: typeof organizations;
+  permitTypes: typeof permitTypes;
+  stateFields: typeof stateFields;
+  systemFields: typeof systemFields;
   users: typeof users;
 }>;
 
