@@ -10,11 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Pencil, MapPin, Flag, Upload, AlertTriangle, PlusCircle, FolderOpen, ChevronRight, Send, ExternalLink, Bell, Settings2 } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
+import { Search, Plus, Pencil, MapPin, FolderOpen, ChevronRight, Send, ExternalLink, Bell, Settings2, ChevronDown, Maximize2 } from "lucide-react";
 import { RouteMap } from "@/components/map/RouteMap";
-import { RouteSegmentsCard } from "@/components/map/RouteSegmentsCard";
 import type { Waypoint } from "@/lib/mapbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 
@@ -48,79 +47,27 @@ export default function CreateNewBidPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [sameAsCustomer, setSameAsCustomer] = useState(false);
   const [routeWaypoints, setRouteWaypoints] = useState<Waypoint[]>([]);
-  const [routeSnappedCoordinates, setRouteSnappedCoordinates] = useState<number[][]>([]);
-  const [isAddingSegment, setIsAddingSegment] = useState(false);
+  const [routeType, setRouteType] = useState<"interstate" | "non-interstate">("interstate");
+  const [showExtraFields, setShowExtraFields] = useState(false);
 
-  interface LoadItem {
-    id: number;
-    description: string;
-    height: string;
-    width: string;
-    length: string;
-    weight: string;
-    originAddress: string;
-    destinationAddress: string;
-    oversized: boolean;
-    overweight: boolean;
-  }
+  // Load & Route form state
+  const [loadRouteData, setLoadRouteData] = useState({
+    origin: "",
+    destination: "",
+    loadLength: "",
+    loadWidth: "",
+    loadHeight: "",
+    loadWeight: "",
+    equipment: "",
+    overallLength: "",
+    overallWidth: "",
+    overallHeight: "",
+    overallWeight: "",
+  });
 
-  const [loads, setLoads] = useState<LoadItem[]>([
-    {
-      id: 1,
-      description: "",
-      height: "",
-      width: "",
-      length: "",
-      weight: "",
-      originAddress: "",
-      destinationAddress: "",
-      oversized: false,
-      overweight: false,
-    },
-  ]);
-
-  const addLoad = () => {
-    setLoads([
-      ...loads,
-      {
-        id: loads.length + 1,
-        description: "",
-        height: "",
-        width: "",
-        length: "",
-        weight: "",
-        originAddress: "",
-        destinationAddress: "",
-        oversized: false,
-        overweight: false,
-      },
-    ]);
+  const handleLoadRouteChange = (field: string, value: string) => {
+    setLoadRouteData(prev => ({ ...prev, [field]: value }));
   };
-
-  const removeLoad = (id: number) => {
-    if (loads.length > 1) {
-      setLoads(loads.filter((load) => load.id !== id));
-    }
-  };
-
-  const updateLoad = (id: number, field: keyof LoadItem, value: string | boolean) => {
-    setLoads(
-      loads.map((load) =>
-        load.id === id ? { ...load, [field]: value } : load
-      )
-    );
-  };
-
-  const totalWeight = loads.reduce((sum, load) => sum + (parseFloat(load.weight) || 0), 0);
-  const maxDimensions = loads.reduce(
-    (max, load) => ({
-      height: Math.max(max.height, parseFloat(load.height) || 0),
-      width: Math.max(max.width, parseFloat(load.width) || 0),
-      length: Math.max(max.length, parseFloat(load.length) || 0),
-    }),
-    { height: 0, width: 0, length: 0 }
-  );
-  const hasOversized = loads.some((load) => load.oversized);
 
   const [formData, setFormData] = useState({
     bidTitle: "",
@@ -147,15 +94,14 @@ export default function CreateNewBidPage() {
 
   const handleSaveAndContinue = () => {
     console.log("Save & Continue", formData);
-    if (currentStep < 3) {
+    if (currentStep < 2) {
       setCurrentStep(currentStep + 1);
     }
   };
 
   const steps = [
     { number: 1, label: "Basic Info" },
-    { number: 2, label: "Load Details" },
-    { number: 3, label: "Route & Stops" },
+    { number: 2, label: "Load & Route" },
   ];
 
   return (
@@ -280,7 +226,7 @@ export default function CreateNewBidPage() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto bg-gray-50">
-        <div className={`mx-auto px-6 py-8 ${currentStep === 3 ? 'max-w-full' : 'max-w-4xl'}`}>
+        <div className={`mx-auto px-6 py-8 ${currentStep === 2 ? 'max-w-full' : 'max-w-4xl'}`}>
 
           {/* Form Sections */}
           <div className="space-y-8">
@@ -516,263 +462,227 @@ export default function CreateNewBidPage() {
               </>
             )}
 
-            {/* Step 2: Load Details */}
+            {/* Step 2: Load & Route - Combined View */}
             {currentStep === 2 && (
-              <div className="flex gap-6">
-                {/* Load Information */}
-                <div className="flex-1">
-                  <div className="bg-gray-50 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-6">Load Information</h3>
-                    
-                    <div className="space-y-6">
-                      {loads.map((load, index) => (
-                        <div
-                          key={load.id}
-                          className="bg-white rounded-lg p-6 border border-gray-200"
-                        >
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-base font-semibold text-gray-900">
-                              Load {index + 1}
-                            </h4>
-                            {loads.length > 1 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeLoad(load.id)}
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                              >
-                                Remove
-                              </Button>
-                            )}
-                          </div>
-
-                          <div className="space-y-4">
-                            <div>
-                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                Load Description
-                              </Label>
-                              <Input
-                                placeholder="Caterpillar 395 Excavator"
-                                value={load.description}
-                                onChange={(e) => updateLoad(load.id, "description", e.target.value)}
-                              />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                  Height (ft)
-                                </Label>
-                                <Input
-                                  type="number"
-                                  placeholder="13.5"
-                                  value={load.height}
-                                  onChange={(e) => updateLoad(load.id, "height", e.target.value)}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                  Width (ft)
-                                </Label>
-                                <Input
-                                  type="number"
-                                  placeholder="12"
-                                  value={load.width}
-                                  onChange={(e) => updateLoad(load.id, "width", e.target.value)}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                  Length (ft)
-                                </Label>
-                                <Input
-                                  type="number"
-                                  placeholder="55"
-                                  value={load.length}
-                                  onChange={(e) => updateLoad(load.id, "length", e.target.value)}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                  Weight (lbs)
-                                </Label>
-                                <Input
-                                  type="number"
-                                  placeholder="207,000"
-                                  value={load.weight}
-                                  onChange={(e) => updateLoad(load.id, "weight", e.target.value)}
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                Origin Address
-                              </Label>
-                              <div className="relative">
-                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                  placeholder="8201 W Plank Rd, Peoria, IL 61604"
-                                  value={load.originAddress}
-                                  onChange={(e) => updateLoad(load.id, "originAddress", e.target.value)}
-                                  className="pl-10"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                Destination Address
-                              </Label>
-                              <div className="relative">
-                                <Flag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                  placeholder="123 Main St, Houston, TX 77002"
-                                  value={load.destinationAddress}
-                                  onChange={(e) => updateLoad(load.id, "destinationAddress", e.target.value)}
-                                  className="pl-10"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                Initial Load Photos
-                              </Label>
-                              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer">
-                                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                                <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                <p className="text-xs text-gray-400 mt-1">PNG, JPG, or GIF (max. 10MB)</p>
-                              </div>
-                            </div>
-
-                            <div className="space-y-4 pt-4 border-t border-gray-200">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className="font-medium text-gray-900">Oversized</div>
-                                  <div className="text-sm text-gray-500">Flag if dimensions exceed standard limits.</div>
-                                </div>
-                                <Switch
-                                  checked={load.oversized}
-                                  onCheckedChange={(checked) => updateLoad(load.id, "oversized", checked)}
-                                />
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className="font-medium text-gray-900">Overweight</div>
-                                  <div className="text-sm text-gray-500">Flag if weight exceeds standard limits.</div>
-                                </div>
-                                <Switch
-                                  checked={load.overweight}
-                                  onCheckedChange={(checked) => updateLoad(load.id, "overweight", checked)}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      <Button
-                        variant="outline"
-                        onClick={addLoad}
-                        className="w-full border-gray-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                      >
-                        <PlusCircle className="h-4 w-4 mr-2" />
-                        Add Another Load
-                      </Button>
-                    </div>
+              <div className="flex gap-6 h-[calc(100vh-280px)]">
+                {/* Left: Map */}
+                <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden relative">
+                  {/* Map Toggle */}
+                  <div className="absolute top-4 left-4 z-10 flex bg-white rounded-md shadow-sm border border-gray-200">
+                    <button className="px-4 py-2 text-sm font-medium bg-white text-gray-900 rounded-l-md border-r border-gray-200">
+                      Map
+                    </button>
+                    <button className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 rounded-r-md">
+                      Satellite
+                    </button>
                   </div>
+                  
+                  {/* Fullscreen Button */}
+                  <button className="absolute top-4 right-4 z-10 p-2 bg-white rounded-md shadow-sm border border-gray-200 hover:bg-gray-50">
+                    <Maximize2 className="h-4 w-4 text-gray-600" />
+                  </button>
+
+                  <RouteMap
+                    waypoints={routeWaypoints}
+                    onWaypointsChange={(waypoints) => {
+                      setRouteWaypoints(waypoints);
+                    }}
+                    isAddingSegment={false}
+                    onSegmentAdded={() => {}}
+                  />
                 </div>
 
-                {/* Bid Summary Sidebar */}
-                <div className="w-80">
-                  <div className="bg-white rounded-lg p-6 border border-gray-200 sticky top-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Bid Summary</h3>
-                    
-                    <div className="space-y-4">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Total Number of Loads</span>
-                        <span className="font-semibold text-gray-900">{loads.length}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Gross Combined Weight</span>
-                        <span className="font-semibold text-gray-900">
-                          {totalWeight > 0 ? `${totalWeight.toLocaleString()} lbs` : "-"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Maximum Dimensions</span>
-                        <span className="font-semibold text-gray-900">
-                          {maxDimensions.height > 0 || maxDimensions.width > 0 || maxDimensions.length > 0
-                            ? `${maxDimensions.height}' x ${maxDimensions.width}' x ${maxDimensions.length}'`
-                            : "-"}
-                        </span>
-                      </div>
-
-                      {hasOversized && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                            <p className="text-sm text-yellow-800">
-                              Oversized load requires special permits.
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                {/* Right: Form Panel */}
+                <div className="w-[400px] flex-shrink-0 space-y-6 overflow-y-auto">
+                  {/* Origin & Destination */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Origin
+                      </Label>
+                      <Input
+                        placeholder="Houston or 77001"
+                        value={loadRouteData.origin}
+                        onChange={(e) => handleLoadRouteChange("origin", e.target.value)}
+                        className="bg-gray-50"
+                      />
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Route & Stops */}
-            {currentStep === 3 && (
-              <div className="relative flex flex-col" style={{ height: 'calc(100vh - 320px)' }}>
-                {/* Map Container */}
-                <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm flex-1 flex flex-col h-full">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Route Planning</h3>
-                  <div className="flex-1 w-full rounded-lg overflow-hidden relative">
-                    <RouteMap
-                      waypoints={routeWaypoints}
-                      onWaypointsChange={(waypoints, snappedCoords) => {
-                        setRouteWaypoints(waypoints);
-                        if (snappedCoords) {
-                          setRouteSnappedCoordinates(snappedCoords);
-                        }
-                      }}
-                      isAddingSegment={isAddingSegment}
-                      onSegmentAdded={() => {
-                        setIsAddingSegment(false);
-                      }}
-                    />
-                    
-                    {/* Route Segments Card Overlay */}
-                    <div className="absolute top-4 left-4 z-10 w-96 max-w-[calc(100%-2rem)]">
-                      <RouteSegmentsCard
-                        waypoints={routeWaypoints}
-                        createdAt={new Date()}
-                        lastEdited={new Date()}
-                        isAddingSegment={isAddingSegment}
-                        onAddSegment={() => {
-                          setIsAddingSegment(true);
-                        }}
-                        onDoneAdding={() => {
-                          setIsAddingSegment(false);
-                        }}
-                        onRemoveWaypoint={(index) => {
-                          const updated = routeWaypoints.filter((_, i) => i !== index);
-                          const reordered = updated.map((wp, i) => ({
-                            ...wp,
-                            order: i + 1,
-                          }));
-                          setRouteWaypoints(reordered);
-                        }}
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Destination
+                      </Label>
+                      <Input
+                        placeholder="Chicago or 60007"
+                        value={loadRouteData.destination}
+                        onChange={(e) => handleLoadRouteChange("destination", e.target.value)}
+                        className="bg-gray-50"
                       />
                     </div>
                   </div>
+
+                  {/* Route Type Toggle */}
+                  <RadioGroup
+                    value={routeType}
+                    onValueChange={(value) => setRouteType(value as "interstate" | "non-interstate")}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="interstate" id="interstate" />
+                      <Label htmlFor="interstate" className="text-sm font-medium cursor-pointer">Interstate</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="non-interstate" id="non-interstate" />
+                      <Label htmlFor="non-interstate" className="text-sm font-medium cursor-pointer">Non-Interstate</Label>
+                    </div>
+                  </RadioGroup>
+
+                  {/* Load Dimensions */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-semibold text-gray-900">Load Dimensions</h4>
+                      <a href="#" className="text-xs text-blue-600 hover:underline">Acceptable Formats</a>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">↔</span> Length
+                        </Label>
+                        <Input
+                          placeholder="30'"
+                          value={loadRouteData.loadLength}
+                          onChange={(e) => handleLoadRouteChange("loadLength", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">↗</span> Width
+                        </Label>
+                        <Input
+                          placeholder="5'6&quot;"
+                          value={loadRouteData.loadWidth}
+                          onChange={(e) => handleLoadRouteChange("loadWidth", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">↕</span> Height
+                        </Label>
+                        <Input
+                          placeholder="10'6&quot;"
+                          value={loadRouteData.loadHeight}
+                          onChange={(e) => handleLoadRouteChange("loadHeight", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">⚖</span> Weight
+                        </Label>
+                        <Input
+                          placeholder="25000"
+                          value={loadRouteData.loadWeight}
+                          onChange={(e) => handleLoadRouteChange("loadWeight", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Equipment */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Equipment</h4>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Click here to add tractor and trailer"
+                        value={loadRouteData.equipment}
+                        onChange={(e) => handleLoadRouteChange("equipment", e.target.value)}
+                        className="flex-1 text-sm"
+                      />
+                      <Button variant="outline" size="sm" className="whitespace-nowrap">
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        New
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Overall Dimensions */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Overall Dimensions</h4>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">↔</span> Length
+                        </Label>
+                        <Input
+                          placeholder="75'"
+                          value={loadRouteData.overallLength}
+                          onChange={(e) => handleLoadRouteChange("overallLength", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">↗</span> Width
+                        </Label>
+                        <Input
+                          placeholder="8'6&quot;"
+                          value={loadRouteData.overallWidth}
+                          onChange={(e) => handleLoadRouteChange("overallWidth", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">↕</span> Height
+                        </Label>
+                        <Input
+                          placeholder="13'6&quot;"
+                          value={loadRouteData.overallHeight}
+                          onChange={(e) => handleLoadRouteChange("overallHeight", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                          <span className="text-gray-400">⚖</span> Weight
+                        </Label>
+                        <Input
+                          placeholder="80000"
+                          value={loadRouteData.overallWeight}
+                          onChange={(e) => handleLoadRouteChange("overallWeight", e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Extra Fields */}
+                  <div>
+                    <button
+                      onClick={() => setShowExtraFields(!showExtraFields)}
+                      className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                    >
+                      Extra Fields
+                      <ChevronDown className={`h-4 w-4 transition-transform ${showExtraFields ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showExtraFields && (
+                      <div className="mt-3 p-4 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-500">Additional fields coming soon...</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Calculate Costs Button */}
+                  <Button
+                    variant="outline"
+                    className="w-full border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    Calculate Costs
+                  </Button>
                 </div>
               </div>
             )}
