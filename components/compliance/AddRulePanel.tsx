@@ -107,8 +107,15 @@ export function AddRulePanel({ jurisdiction, onClose, onSuccess }: AddRulePanelP
                 const category = v as RuleCategory;
                 setFormData({ ...formData, category });
                 setConditions({});
-                // Initialize IF/THEN rule with appropriate type
-                const ruleType = category === "utility_notice" ? "utility_notice" : "escort";
+                // Initialize IF/THEN rule with appropriate type based on category
+                let ruleType: 'escort' | 'utility_notice' | 'permit_requirement' = 'escort';
+                if (category === "utility_notice") {
+                  ruleType = "utility_notice";
+                } else if (category === "permit_requirement") {
+                  ruleType = "permit_requirement";
+                } else if (category === "escort_requirement") {
+                  ruleType = "escort";
+                }
                 setIfThenRule(createEmptyIfThenRule(ruleType));
               }}
             >

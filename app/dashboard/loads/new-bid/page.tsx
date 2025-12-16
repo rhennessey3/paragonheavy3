@@ -231,11 +231,7 @@ export default function CreateNewBidPage() {
       origin: selection.address,
       originCoords: { lat: selection.lat, lng: selection.lng },
     }));
-    // Update waypoints with origin
-    updateWaypointsFromAddresses(
-      { lat: selection.lat, lng: selection.lng, address: selection.address },
-      loadRouteData.destinationCoords ? { ...loadRouteData.destinationCoords, address: loadRouteData.destination } : null
-    );
+    // Waypoints will be updated via useEffect when originCoords changes
   };
 
   const handleDestinationSelect = (selection: AddressSelection) => {
@@ -244,36 +240,34 @@ export default function CreateNewBidPage() {
       destination: selection.address,
       destinationCoords: { lat: selection.lat, lng: selection.lng },
     }));
-    // Update waypoints with destination
-    updateWaypointsFromAddresses(
-      loadRouteData.originCoords ? { ...loadRouteData.originCoords, address: loadRouteData.origin } : null,
-      { lat: selection.lat, lng: selection.lng, address: selection.address }
-    );
+    // Waypoints will be updated via useEffect when destinationCoords changes
   };
 
-  const updateWaypointsFromAddresses = (
-    origin: { lat: number; lng: number; address: string } | null,
-    destination: { lat: number; lng: number; address: string } | null
-  ) => {
+  // Update waypoints when origin or destination coordinates change
+  // Using useEffect ensures we have the latest state values, avoiding stale closure issues
+  useEffect(() => {
     const newWaypoints: Waypoint[] = [];
-    if (origin) {
+    
+    if (loadRouteData.originCoords) {
       newWaypoints.push({
-        lat: origin.lat,
-        lng: origin.lng,
-        address: origin.address,
+        lat: loadRouteData.originCoords.lat,
+        lng: loadRouteData.originCoords.lng,
+        address: loadRouteData.origin,
         order: 1,
       });
     }
-    if (destination) {
+    
+    if (loadRouteData.destinationCoords) {
       newWaypoints.push({
-        lat: destination.lat,
-        lng: destination.lng,
-        address: destination.address,
+        lat: loadRouteData.destinationCoords.lat,
+        lng: loadRouteData.destinationCoords.lng,
+        address: loadRouteData.destination,
         order: 2,
       });
     }
+    
     setRouteWaypoints(newWaypoints);
-  };
+  }, [loadRouteData.originCoords, loadRouteData.destinationCoords, loadRouteData.origin, loadRouteData.destination]);
 
   const [formData, setFormData] = useState({
     bidTitle: "",
