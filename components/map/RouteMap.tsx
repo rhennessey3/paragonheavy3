@@ -45,6 +45,9 @@ export function RouteMap({
       style: "mapbox://styles/mapbox/streets-v12",
       center: initialCenter,
       zoom: initialZoom,
+      pitch: 0,
+      maxPitch: 0,
+      projection: "mercator",
     });
 
     map.current.addControl(new mapboxgl.NavigationControl(), "top-right");

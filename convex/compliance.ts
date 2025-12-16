@@ -175,7 +175,8 @@ export const createRule = mutation({
       v.literal("time_restriction"),
       v.literal("permit_requirement"),
       v.literal("speed_limit"),
-      v.literal("route_restriction")
+      v.literal("route_restriction"),
+      v.literal("utility_notice")
     ),
     title: v.string(),
     summary: v.string(),
@@ -225,7 +226,8 @@ export const updateRule = mutation({
       v.literal("time_restriction"),
       v.literal("permit_requirement"),
       v.literal("speed_limit"),
-      v.literal("route_restriction")
+      v.literal("route_restriction"),
+      v.literal("utility_notice")
     )),
     title: v.optional(v.string()),
     summary: v.optional(v.string()),
@@ -355,7 +357,8 @@ export const searchRules = query({
       v.literal("time_restriction"),
       v.literal("permit_requirement"),
       v.literal("speed_limit"),
-      v.literal("route_restriction")
+      v.literal("route_restriction"),
+      v.literal("utility_notice")
     )),
     searchTerm: v.optional(v.string()),
   },

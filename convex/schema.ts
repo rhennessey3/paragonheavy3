@@ -86,6 +86,49 @@ export default defineSchema({
         order: v.number(),
       })),
       snappedCoordinates: v.array(v.array(v.number())), // Array of [lng, lat] pairs for the route line
+      segments: v.optional(v.array(v.object({
+        startIndex: v.number(),         // index in snappedCoordinates
+        endIndex: v.number(),
+        distance: v.number(),           // meters
+        duration: v.number(),           // seconds
+        roadClass: v.optional(v.string()), // 'motorway', 'trunk', 'primary', etc.
+        lanes: v.optional(v.number()),  // estimated lanes in travel direction
+        heading: v.optional(v.number()), // 0-360 degrees
+        roadName: v.optional(v.string()),
+      }))),
+    })),
+    // Combined axle configuration for this load (power unit + drawn unit)
+    axleConfiguration: v.optional(v.object({
+      powerUnit: v.object({
+        truckId: v.optional(v.id("trucks")),
+        axleCount: v.number(),
+        axleWeights: v.array(v.object({
+          position: v.number(),
+          weight: v.number(),           // Actual loaded weight in lbs
+        })),
+        axleDistances: v.array(v.object({
+          fromPosition: v.number(),
+          toPosition: v.number(),
+          distance: v.string(),         // "Ft'In\"" format
+        })),
+      }),
+      drawnUnit: v.optional(v.object({
+        trailerId: v.optional(v.id("trailers")),
+        axleCount: v.number(),
+        axleWeights: v.array(v.object({
+          position: v.number(),
+          weight: v.number(),           // Actual loaded weight in lbs
+        })),
+        axleDistances: v.array(v.object({
+          fromPosition: v.number(),
+          toPosition: v.number(),
+          distance: v.string(),         // "Ft'In\"" format
+        })),
+      })),
+      // Distance from last power unit axle to first drawn unit axle
+      kingpinToFirstAxle: v.optional(v.string()),
+      totalAxles: v.number(),
+      grossWeight: v.number(),          // Total of all axle weights
     })),
   })
     .index("by_orgId", ["orgId"])
@@ -172,7 +215,8 @@ export default defineSchema({
       v.literal("time_restriction"),
       v.literal("permit_requirement"),
       v.literal("speed_limit"),
-      v.literal("route_restriction")
+      v.literal("route_restriction"),
+      v.literal("utility_notice")
     ),
     title: v.string(),
     summary: v.string(),
@@ -252,15 +296,22 @@ export default defineSchema({
 
   // Permit Types (forms that use system fields)
   permitTypes: defineTable({
+    jurisdictionId: v.optional(v.id("jurisdictions")), // null = global, otherwise state-specific
     key: v.string(),           // "single_trip", "annual", "superload"
     label: v.string(),         // "Single Trip Permit"
     description: v.optional(v.string()),
+    typical_cost_min: v.optional(v.number()),        // Typical minimum cost
+    typical_cost_max: v.optional(v.number()),        // Typical maximum cost
+    typical_processing_days: v.optional(v.number()), // Typical processing time
+    application_url: v.optional(v.string()),         // Online application URL
     isActive: v.boolean(),
     sortOrder: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_key", ["key"]),
+    .index("by_key", ["key"])
+    .index("by_jurisdiction", ["jurisdictionId"])
+    .index("by_jurisdiction_key", ["jurisdictionId", "key"]),
 
   // Junction table: which fields are on which permit type forms
   permitTypeFields: defineTable({
@@ -291,4 +342,62 @@ export default defineSchema({
   })
     .index("by_jurisdiction", ["jurisdictionId"])
     .index("by_jurisdiction_key", ["jurisdictionId", "key"]),
+
+  // Trucks (Tractors)
+  trucks: defineTable({
+    name: v.string(),                    // "Day Cab", "Sleeper", "Heavy Haul Day Cab"
+    make: v.optional(v.string()),        // "Peterbilt", "Kenworth", "Freightliner"
+    model: v.optional(v.string()),       // "389", "W900", "Cascadia"
+    axles: v.number(),                   // 2, 3, 4
+    emptyWeight: v.number(),             // Weight in lbs
+    orgId: v.id("organizations"),        // Multi-tenant support
+    isDefault: v.optional(v.boolean()),  // Track seeded defaults
+    // Vehicle registration fields
+    usDotNumber: v.optional(v.string()), // US DOT number
+    plateNumber: v.optional(v.string()), // License plate number
+    vinNumber: v.optional(v.string()),   // VIN (last 6 or full)
+    registrationState: v.optional(v.string()), // State of registration (2-letter code)
+    // Axle configuration (per-axle weights and distances)
+    axleWeights: v.optional(v.array(v.object({
+      position: v.number(),              // 1-based index (1 = front/steer axle)
+      weight: v.optional(v.number()),    // Empty weight per axle in lbs
+    }))),
+    axleDistances: v.optional(v.array(v.object({
+      fromPosition: v.number(),          // Starting axle position
+      toPosition: v.number(),            // Ending axle position
+      distance: v.string(),              // Distance in "Ft'In\"" format (e.g., "4'6\"")
+    }))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_name", ["orgId", "name"]),
+
+  // Trailers
+  trailers: defineTable({
+    name: v.string(),                    // "Flatbed", "Step Deck", "RGN / Lowboy"
+    axles: v.number(),                   // 2, 3, 4, 5, 6
+    deckHeight: v.string(),              // "5'0\"", "3'6\"", "1'10\""
+    emptyWeight: v.number(),             // Weight in lbs (32000, 33000, etc.)
+    orgId: v.id("organizations"),        // Multi-tenant support
+    isDefault: v.optional(v.boolean()),  // Track seeded defaults
+    // Vehicle registration fields
+    plateNumber: v.optional(v.string()), // License plate number
+    vinNumber: v.optional(v.string()),   // VIN (last 6 or full)
+    registrationState: v.optional(v.string()), // State of registration (2-letter code)
+    // Axle configuration (per-axle weights and distances)
+    axleWeights: v.optional(v.array(v.object({
+      position: v.number(),              // 1-based index (1 = first trailer axle)
+      weight: v.optional(v.number()),    // Empty weight per axle in lbs
+    }))),
+    axleDistances: v.optional(v.array(v.object({
+      fromPosition: v.number(),          // Starting axle position
+      toPosition: v.number(),            // Ending axle position
+      distance: v.string(),              // Distance in "Ft'In\"" format (e.g., "4'6\"")
+    }))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_name", ["orgId", "name"]),
 });

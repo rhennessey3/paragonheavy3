@@ -13,7 +13,9 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
-  AlertCircle
+  AlertCircle,
+  MapPin,
+  Globe
 } from "lucide-react";
 import { FIELD_CATEGORIES, getCategoryInfo } from "@/lib/systemFields";
 import { FIELD_REQUIREMENTS, getRequirementInfo, type FieldRequirement } from "@/lib/permitTypes";
@@ -170,7 +172,20 @@ export default function PermitTypeFieldsPage() {
                 Back
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">{permitType.label}</h1>
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-2xl font-bold text-gray-900">{permitType.label}</h1>
+                  {permitType.jurisdiction ? (
+                    <Badge className="bg-purple-100 text-purple-800 flex items-center gap-1">
+                      <MapPin className="h-3 w-3" />
+                      {permitType.jurisdiction.name}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-gray-100 text-gray-600 flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      Global
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-gray-600 text-sm">
                   Configure which fields appear on this permit form
                 </p>

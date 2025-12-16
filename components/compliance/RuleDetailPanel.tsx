@@ -18,12 +18,26 @@ import {
   ExternalLink,
   Flag,
   AlertCircle,
-  Pencil
+  Pencil,
+  Zap,
+  Phone,
+  Mail,
+  Globe,
+  DollarSign
 } from "lucide-react";
 import { 
   getAttributeConfig,
   type RuleConditionClause,
   type EscortRequirement,
+  type UtilityNoticeRequirement,
+  type PermitRequirement,
+  isUtilityNoticeRequirement,
+  isPermitRequirement,
+  UTILITY_TYPES,
+  COMMON_PERMIT_DOCUMENTS,
+  APPLICATION_METHODS,
+  formatUtilityNoticeRequirements,
+  formatPermitRequirements,
 } from "@/lib/compliance";
 
 interface RuleDetailPanelProps {
@@ -39,6 +53,7 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ElementType; 
   permit_requirement: { label: "Permit Required", icon: FileText, color: "bg-blue-100 text-blue-700" },
   speed_limit: { label: "Speed Limit", icon: Gauge, color: "bg-red-100 text-red-700" },
   route_restriction: { label: "Route Restriction", icon: Route, color: "bg-green-100 text-green-700" },
+  utility_notice: { label: "Utility Notice", icon: Zap, color: "bg-amber-100 text-amber-700" },
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -93,7 +108,10 @@ export function RuleDetailPanel({ ruleId, onClose, onEdit }: RuleDetailPanelProp
   // Check if this is an IF/THEN rule
   const isIfThenRule = rule.conditions?.ifThen === true;
   const conditions: RuleConditionClause[] = isIfThenRule ? rule.conditions.conditions : [];
-  const requirement: EscortRequirement | null = isIfThenRule ? rule.conditions.requirement : null;
+  const requirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement | null = isIfThenRule ? rule.conditions.requirement : null;
+  const requirementType = rule.conditions?.requirementType || 
+    (requirement && isUtilityNoticeRequirement(requirement) ? 'utility_notice' : 
+     requirement && isPermitRequirement(requirement) ? 'permit_requirement' : 'escort');
 
   return (
     <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
@@ -192,51 +210,259 @@ export function RuleDetailPanel({ ruleId, onClose, onEdit }: RuleDetailPanelProp
                 </span>
                 <span className="text-sm text-gray-500">Requirements</span>
               </div>
-              <div className="space-y-3">
-                {/* Front Escorts */}
-                {requirement.front_escorts > 0 && (
+              
+              {requirementType === 'permit_requirement' && isPermitRequirement(requirement) ? (
+                <div className="space-y-3">
+                  {/* Permit Type */}
                   <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
-                    <Car className="h-5 w-5 text-blue-600" />
-                    <div>
+                    <FileText className="h-5 w-5 text-purple-600" />
+                    <div className="flex-1">
                       <div className="font-medium text-gray-900">
-                        {requirement.front_escorts} Front Escort{requirement.front_escorts > 1 ? 's' : ''} (Lead)
+                        {requirement.permit_type_label || requirement.permit_type_key}
                       </div>
-                      {requirement.front_has_height_pole && (
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <Flag className="h-3 w-3" />
-                          Height pole required
-                        </div>
-                      )}
+                      <div className="text-sm text-gray-500">
+                        {formatPermitRequirements(requirement)}
+                      </div>
                     </div>
                   </div>
-                )}
 
-                {/* Rear Escorts */}
-                {requirement.rear_escorts > 0 && (
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
-                    <Car className="h-5 w-5 text-orange-600 rotate-180" />
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {requirement.rear_escorts} Rear Escort{requirement.rear_escorts > 1 ? 's' : ''} (Follow)
+                  {/* Cost Information */}
+                  {(requirement.estimated_cost_min !== undefined || requirement.estimated_cost_max !== undefined) && (
+                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <DollarSign className="h-4 w-4 text-green-600" />
+                        <div className="font-medium text-gray-900">Estimated Cost:</div>
                       </div>
-                      {requirement.rear_has_height_pole && (
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <Flag className="h-3 w-3" />
-                          Height pole required
-                        </div>
+                      <div className="ml-6 text-sm text-gray-700">
+                        {requirement.estimated_cost_min === requirement.estimated_cost_max 
+                          ? `$${requirement.estimated_cost_min}`
+                          : `$${requirement.estimated_cost_min || 0} - $${requirement.estimated_cost_max || requirement.estimated_cost_min}`
+                        }
+                      </div>
+                      {requirement.cost_notes && (
+                        <div className="ml-6 text-xs text-gray-500 mt-1">{requirement.cost_notes}</div>
                       )}
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* No escorts */}
-                {requirement.front_escorts === 0 && requirement.rear_escorts === 0 && (
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <AlertCircle className="h-4 w-4" />
-                    <span>No escort requirements specified</span>
+                  {/* Processing Information */}
+                  {(requirement.processing_time_days || requirement.validity_period_days) && (
+                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="h-4 w-4 text-blue-600" />
+                        <div className="font-medium text-gray-900">Timeframes:</div>
+                      </div>
+                      <div className="ml-6 space-y-1 text-sm text-gray-700">
+                        {requirement.processing_time_days && (
+                          <div>Processing: {requirement.processing_time_days} day{requirement.processing_time_days > 1 ? 's' : ''}</div>
+                        )}
+                        {requirement.validity_period_days && (
+                          <div>Valid for: {requirement.validity_period_days} day{requirement.validity_period_days > 1 ? 's' : ''}</div>
+                        )}
+                      </div>
+                      {requirement.processing_notes && (
+                        <div className="ml-6 text-xs text-gray-500 mt-1">{requirement.processing_notes}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Application Method & Contact */}
+                  {(requirement.application_method || requirement.application_url || requirement.contact_name) && (
+                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="font-medium text-gray-900 mb-2">Application Information:</div>
+                      <div className="space-y-1 ml-2">
+                        {requirement.application_method && (
+                          <div className="text-sm text-gray-700">
+                            Method: {APPLICATION_METHODS.find(m => m.value === requirement.application_method)?.label || requirement.application_method}
+                          </div>
+                        )}
+                        {requirement.application_url && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Globe className="h-3 w-3" />
+                            <a href={requirement.application_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                              Apply Online
+                            </a>
+                          </div>
+                        )}
+                        {requirement.contact_name && (
+                          <div className="text-sm text-gray-700">{requirement.contact_name}</div>
+                        )}
+                        {requirement.contact_phone && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            {requirement.contact_phone}
+                          </div>
+                        )}
+                        {requirement.contact_email && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Mail className="h-3 w-3" />
+                            <a href={`mailto:${requirement.contact_email}`} className="text-blue-600 hover:underline">
+                              {requirement.contact_email}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Required Documents */}
+                  {requirement.required_documents && requirement.required_documents.length > 0 && (
+                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="h-4 w-4 text-indigo-600" />
+                        <div className="font-medium text-gray-900">Required Documents:</div>
+                      </div>
+                      <div className="flex flex-wrap gap-1 ml-6">
+                        {requirement.required_documents.map(doc => {
+                          const docLabel = COMMON_PERMIT_DOCUMENTS.find(d => d.value === doc)?.label || doc;
+                          return (
+                            <Badge key={doc} variant="outline" className="text-xs">
+                              {docLabel}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Restrictions */}
+                  {requirement.restrictions && (
+                    <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="h-4 w-4 text-red-600" />
+                        <div className="font-medium text-red-900">Restrictions:</div>
+                      </div>
+                      <div className="ml-6 text-sm text-red-800">{requirement.restrictions}</div>
+                    </div>
+                  )}
+                </div>
+              ) : requirementType === 'utility_notice' && isUtilityNoticeRequirement(requirement) ? (
+                <div className="space-y-3">
+                  {/* Notice Period */}
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                    <Clock className="h-5 w-5 text-blue-600" />
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">
+                        {requirement.notice_hours} hours prior notice required
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {formatUtilityNoticeRequirements(requirement)}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {/* Utility Types */}
+                  {requirement.utility_types && requirement.utility_types.length > 0 && (
+                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Zap className="h-4 w-4 text-amber-600" />
+                        <div className="font-medium text-gray-900">Affected Utilities:</div>
+                      </div>
+                      <div className="flex flex-wrap gap-1 ml-6">
+                        {requirement.utility_types.map(type => {
+                          const utilityLabel = UTILITY_TYPES.find(ut => ut.value === type)?.label || type;
+                          return (
+                            <Badge key={type} variant="outline" className="text-xs">
+                              {utilityLabel}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Contact Information */}
+                  {(requirement.contact_name || requirement.contact_phone || requirement.contact_email || requirement.contact_website) && (
+                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="font-medium text-gray-900 mb-2">Contact Information:</div>
+                      <div className="space-y-1 ml-2">
+                        {requirement.contact_name && (
+                          <div className="text-sm text-gray-700">{requirement.contact_name}</div>
+                        )}
+                        {requirement.contact_phone && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            {requirement.contact_phone}
+                          </div>
+                        )}
+                        {requirement.contact_email && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Mail className="h-3 w-3" />
+                            <a href={`mailto:${requirement.contact_email}`} className="text-blue-600 hover:underline">
+                              {requirement.contact_email}
+                            </a>
+                          </div>
+                        )}
+                        {requirement.contact_website && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Globe className="h-3 w-3" />
+                            <a href={requirement.contact_website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                              {requirement.contact_website}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cost Estimate */}
+                  {requirement.estimated_cost_range && (
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                      <DollarSign className="h-5 w-5 text-green-600" />
+                      <div>
+                        <div className="font-medium text-gray-900">Estimated Cost:</div>
+                        <div className="text-sm text-gray-600">{requirement.estimated_cost_range}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Front Escorts */}
+                  {!isUtilityNoticeRequirement(requirement) && requirement.front_escorts > 0 && (
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                      <Car className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {requirement.front_escorts} Front Escort{requirement.front_escorts > 1 ? 's' : ''} (Lead)
+                        </div>
+                        {requirement.front_has_height_pole && (
+                          <div className="flex items-center gap-1 text-sm text-gray-500">
+                            <Flag className="h-3 w-3" />
+                            Height pole required
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rear Escorts */}
+                  {!isUtilityNoticeRequirement(requirement) && requirement.rear_escorts > 0 && (
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                      <Car className="h-5 w-5 text-orange-600 rotate-180" />
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {requirement.rear_escorts} Rear Escort{requirement.rear_escorts > 1 ? 's' : ''} (Follow)
+                        </div>
+                        {requirement.rear_has_height_pole && (
+                          <div className="flex items-center gap-1 text-sm text-gray-500">
+                            <Flag className="h-3 w-3" />
+                            Height pole required
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No escorts */}
+                  {!isUtilityNoticeRequirement(requirement) && requirement.front_escorts === 0 && requirement.rear_escorts === 0 && (
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>No escort requirements specified</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           )}
 

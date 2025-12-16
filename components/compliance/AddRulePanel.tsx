@@ -38,8 +38,8 @@ export function AddRulePanel({ jurisdiction, onClose, onSuccess }: AddRulePanelP
   const [conditions, setConditions] = useState<RuleCondition>({});
   const [ifThenRule, setIfThenRule] = useState<IfThenRule>(createEmptyIfThenRule());
 
-  // Use IF/THEN builder for escort requirements
-  const useIfThenBuilder = formData.category === "escort_requirement";
+  // Use IF/THEN builder for escort requirements, utility notices, and permit requirements
+  const useIfThenBuilder = formData.category === "escort_requirement" || formData.category === "utility_notice" || formData.category === "permit_requirement";
 
   const handleSubmit = async (publish: boolean = false) => {
     if (!formData.category || !formData.title || !formData.summary) {
@@ -104,9 +104,12 @@ export function AddRulePanel({ jurisdiction, onClose, onSuccess }: AddRulePanelP
             <Select
               value={formData.category}
               onValueChange={(v) => {
-                setFormData({ ...formData, category: v as RuleCategory });
+                const category = v as RuleCategory;
+                setFormData({ ...formData, category });
                 setConditions({});
-                setIfThenRule(createEmptyIfThenRule());
+                // Initialize IF/THEN rule with appropriate type
+                const ruleType = category === "utility_notice" ? "utility_notice" : "escort";
+                setIfThenRule(createEmptyIfThenRule(ruleType));
               }}
             >
               <SelectTrigger className="mt-1">
@@ -174,7 +177,7 @@ export function AddRulePanel({ jurisdiction, onClose, onSuccess }: AddRulePanelP
                 <>
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">Rule Builder</h3>
                   <p className="text-xs text-gray-500 mb-4">
-                    Define IF conditions and THEN requirements for this escort rule.
+                    Define IF conditions and THEN requirements for this {formData.category === "utility_notice" ? "utility notice" : "escort"} rule.
                   </p>
                   <IfThenRuleBuilder
                     rule={ifThenRule}

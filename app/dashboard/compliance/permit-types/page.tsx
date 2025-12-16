@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -17,9 +17,20 @@ import {
   X,
   Edit2,
   Trash2,
-  Database
+  Database,
+  MapPin,
+  Globe,
+  Copy
 } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export default function PermitTypesPage() {
   const router = useRouter();
@@ -27,13 +38,19 @@ export default function PermitTypesPage() {
   const [newKey, setNewKey] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [newJurisdictionId, setNewJurisdictionId] = useState<string>("");
+  const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
+  const [copyFromPermitTypeId, setCopyFromPermitTypeId] = useState<string>("");
 
   const permitTypeStats = useQuery(api.permitTypes.getPermitTypeStats, {});
+  const allPermitTypes = useQuery(api.permitTypes.getAllPermitTypes, {});
   const systemFields = useQuery(api.systemFields.getSystemFields, {});
+  const states = useQuery(api.compliance.getJurisdictions, { type: "state" });
   const seedPermitTypes = useMutation(api.permitTypes.seedPermitTypes);
   const seedPermitTypeFields = useMutation(api.permitTypes.seedPermitTypeFields);
   const createPermitType = useMutation(api.permitTypes.createPermitType);
   const deletePermitType = useMutation(api.permitTypes.deletePermitType);
+  const copyPermitTypeFields = useMutation(api.permitTypes.copyPermitTypeFields);
 
   const handleSeedTypes = async () => {
     try {
@@ -62,19 +79,44 @@ export default function PermitTypesPage() {
     }
 
     try {
-      await createPermitType({
+      const newPermitTypeId = await createPermitType({
         key: newKey.trim().toLowerCase().replace(/\s+/g, "_"),
         label: newLabel.trim(),
         description: newDescription.trim() || undefined,
+        jurisdictionId: newJurisdictionId ? (newJurisdictionId as Id<"jurisdictions">) : undefined,
       });
+
+      // If copying from another permit type, copy the field configurations
+      if (copyFromPermitTypeId) {
+        await copyPermitTypeFields({
+          sourcePermitTypeId: copyFromPermitTypeId as Id<"permitTypes">,
+          targetPermitTypeId: newPermitTypeId,
+        });
+      }
+
       setIsCreating(false);
       setNewKey("");
       setNewLabel("");
       setNewDescription("");
+      setNewJurisdictionId("");
+      setCopyFromPermitTypeId("");
     } catch (error: any) {
       alert(error.message || "Error creating permit type");
     }
   };
+
+  // Filter permit types by jurisdiction
+  const filteredPermitTypes = useMemo(() => {
+    if (!permitTypeStats) return [];
+    
+    if (jurisdictionFilter === "all") {
+      return permitTypeStats;
+    } else if (jurisdictionFilter === "global") {
+      return permitTypeStats.filter(pt => !pt.jurisdictionId);
+    } else {
+      return permitTypeStats.filter(pt => pt.jurisdictionId === jurisdictionFilter);
+    }
+  }, [permitTypeStats, jurisdictionFilter]);
 
   const handleDelete = async (id: Id<"permitTypes">, label: string) => {
     if (!confirm(`Delete "${label}"? This will also remove all field configurations.`)) {
@@ -110,7 +152,7 @@ export default function PermitTypesPage() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Permit Types</h1>
                 <p className="text-gray-600 text-sm">
-                  Configure which fields appear on each permit form
+                  Configure which fields appear on each permit form by state/county
                 </p>
               </div>
             </div>
@@ -135,11 +177,48 @@ export default function PermitTypesPage() {
             </div>
           </div>
 
+          {/* Jurisdiction Filter */}
+          {permitTypeStats && permitTypeStats.length > 0 && (
+            <div className="mb-6 flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700">Filter by:</label>
+              <Select value={jurisdictionFilter} onValueChange={setJurisdictionFilter}>
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-4 w-4" />
+                      All Jurisdictions
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="global">
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-4 w-4" />
+                      Global (No specific jurisdiction)
+                    </div>
+                  </SelectItem>
+                  {states && states.map((state) => (
+                    <SelectItem key={state._id} value={state._id}>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        {state.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-gray-500">
+                Showing {filteredPermitTypes.length} permit type{filteredPermitTypes.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+
           {/* Create Form */}
           {isCreating && (
             <Card className="p-4 mb-6 border-blue-200 bg-blue-50">
               <h3 className="font-semibold text-gray-900 mb-4">New Permit Type</h3>
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1">Key *</label>
                   <Input
@@ -165,6 +244,65 @@ export default function PermitTypesPage() {
                     onChange={(e) => setNewDescription(e.target.value)}
                   />
                 </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">Jurisdiction</label>
+                  <SearchableSelect
+                    value={newJurisdictionId || "none"}
+                    onValueChange={(val) => setNewJurisdictionId(val === "none" ? "" : val)}
+                    placeholder="Global (all states)"
+                    searchPlaceholder="Search states..."
+                    emptyMessage="No states found"
+                    options={[
+                      {
+                        value: "none",
+                        label: "Global (all states)",
+                        icon: <Globe className="h-4 w-4" />,
+                      },
+                      ...(states?.map((state) => ({
+                        value: state._id,
+                        label: `${state.name} (${state.abbreviation})`,
+                        icon: <MapPin className="h-4 w-4" />,
+                      })) || []),
+                    ]}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select a specific state or leave as global
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-sm font-medium text-gray-700 block mb-1">
+                    Copy Field Configuration From (Optional)
+                  </label>
+                  <Select value={copyFromPermitTypeId || "none"} onValueChange={(val) => setCopyFromPermitTypeId(val === "none" ? "" : val)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Start with blank configuration" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4" />
+                          Start with blank configuration
+                        </div>
+                      </SelectItem>
+                      {allPermitTypes && allPermitTypes.map((pt) => (
+                        <SelectItem key={pt._id} value={pt._id}>
+                          <div className="flex items-center gap-2">
+                            <Copy className="h-4 w-4" />
+                            {pt.label}
+                            {pt.jurisdiction && (
+                              <span className="text-xs text-gray-500">
+                                ({pt.jurisdiction.name})
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Copy required/optional/hidden settings from an existing permit type
+                  </p>
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setIsCreating(false)}>
@@ -187,16 +325,37 @@ export default function PermitTypesPage() {
                 or add a custom permit type.
               </p>
             </Card>
+          ) : filteredPermitTypes.length === 0 ? (
+            <Card className="p-8 text-center">
+              <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Matching Permit Types</h3>
+              <p className="text-gray-600 mb-4">
+                No permit types found for the selected jurisdiction.
+              </p>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {permitTypeStats.map((pt) => (
+              {filteredPermitTypes.map((pt) => (
                 <Card 
                   key={pt._id} 
                   className={`p-5 hover:shadow-md transition-shadow ${!pt.isActive ? "opacity-60" : ""}`}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <h3 className="font-semibold text-gray-900">{pt.label}</h3>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-gray-900">{pt.label}</h3>
+                        {pt.jurisdiction ? (
+                          <Badge className="bg-purple-100 text-purple-800 text-xs flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {pt.jurisdiction.abbreviation || pt.jurisdiction.name}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-gray-100 text-gray-600 text-xs flex items-center gap-1">
+                            <Globe className="h-3 w-3" />
+                            Global
+                          </Badge>
+                        )}
+                      </div>
                       <code className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                         {pt.key}
                       </code>

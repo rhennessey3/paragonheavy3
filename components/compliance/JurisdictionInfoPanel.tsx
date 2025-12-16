@@ -88,19 +88,6 @@ export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInf
         <div className="flex gap-6">
           {/* Left - Stats and Actions */}
           <div className="w-64 flex-shrink-0 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Card className="p-3">
-                <div className="text-xs text-gray-500">Total Rules</div>
-                <div className="text-xl font-bold text-gray-900">{rules?.length || 0}</div>
-              </Card>
-              <Card className="p-3">
-                <div className="text-xs text-gray-500">Published</div>
-                <div className="text-xl font-bold text-green-600">
-                  {rules?.filter(r => r.status === "published").length || 0}
-                </div>
-              </Card>
-            </div>
-
             {Object.keys(categoryCounts).length > 0 && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2">Rules by Category</div>

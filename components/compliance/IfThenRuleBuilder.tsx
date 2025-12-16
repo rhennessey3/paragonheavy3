@@ -5,13 +5,19 @@ import { Card } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 import { ConditionRow } from "./ConditionRow";
 import { EscortRequirementEditor } from "./EscortRequirementEditor";
+import { UtilityNoticeRequirementEditor } from "./UtilityNoticeRequirementEditor";
+import { PermitRequirementEditor } from "./PermitRequirementEditor";
 import { 
   RuleConditionClause, 
-  EscortRequirement, 
+  EscortRequirement,
+  UtilityNoticeRequirement,
+  PermitRequirement, 
   IfThenRule,
   RULE_ATTRIBUTES,
   getOperatorsForAttribute,
+  isEscortRequirement,
 } from "@/lib/compliance";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface IfThenRuleBuilderProps {
   rule: IfThenRule;
@@ -56,10 +62,29 @@ export function IfThenRuleBuilder({ rule, onChange }: IfThenRuleBuilderProps) {
     });
   };
 
-  const updateRequirement = (requirement: EscortRequirement) => {
+  const updateRequirement = (requirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement) => {
     onChange({
       ...rule,
       requirement,
+    });
+  };
+
+  const switchRequirementType = (type: 'escort' | 'utility_notice' | 'permit_requirement') => {
+    // Create default requirement for the new type
+    let newRequirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;
+    
+    if (type === 'escort') {
+      newRequirement = { front_escorts: 0, rear_escorts: 0 };
+    } else if (type === 'utility_notice') {
+      newRequirement = { notice_hours: 24, utility_types: [] };
+    } else {
+      newRequirement = { permit_type_key: '', permit_type_label: '' };
+    }
+    
+    onChange({
+      ...rule,
+      requirementType: type,
+      requirement: newRequirement,
     });
   };
 
@@ -117,32 +142,63 @@ export function IfThenRuleBuilder({ rule, onChange }: IfThenRuleBuilderProps) {
 
       {/* THEN Section - Requirements */}
       <Card className="p-4 border-green-200 bg-green-50/30">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full">
-            THEN
-          </span>
-          <span className="text-sm text-gray-500">
-            Require the following
-          </span>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full">
+              THEN
+            </span>
+            <span className="text-sm text-gray-500">
+              Require the following
+            </span>
+          </div>
+          
+          {/* Requirement Type Selector */}
+          <Tabs value={rule.requirementType} onValueChange={(v) => switchRequirementType(v as 'escort' | 'utility_notice' | 'permit_requirement')}>
+            <TabsList className="h-8">
+              <TabsTrigger value="escort" className="text-xs">Escort</TabsTrigger>
+              <TabsTrigger value="utility_notice" className="text-xs">Utility Notice</TabsTrigger>
+              <TabsTrigger value="permit_requirement" className="text-xs">Permit</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
-        <EscortRequirementEditor
-          requirement={rule.requirement}
-          onChange={updateRequirement}
-        />
+        {rule.requirementType === 'escort' ? (
+          <EscortRequirementEditor
+            requirement={rule.requirement as EscortRequirement}
+            onChange={updateRequirement}
+          />
+        ) : rule.requirementType === 'utility_notice' ? (
+          <UtilityNoticeRequirementEditor
+            requirement={rule.requirement as UtilityNoticeRequirement}
+            onChange={updateRequirement}
+          />
+        ) : (
+          <PermitRequirementEditor
+            requirement={rule.requirement as PermitRequirement}
+            onChange={updateRequirement}
+          />
+        )}
       </Card>
     </div>
   );
 }
 
 // Helper to create an empty IF/THEN rule
-export function createEmptyIfThenRule(): IfThenRule {
+export function createEmptyIfThenRule(type: 'escort' | 'utility_notice' | 'permit_requirement' = 'escort'): IfThenRule {
+  let requirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;
+  
+  if (type === 'escort') {
+    requirement = { front_escorts: 0, rear_escorts: 0 };
+  } else if (type === 'utility_notice') {
+    requirement = { notice_hours: 24, utility_types: [] };
+  } else {
+    requirement = { permit_type_key: '', permit_type_label: '' };
+  }
+  
   return {
     conditions: [],
-    requirement: {
-      front_escorts: 0,
-      rear_escorts: 0,
-    },
+    requirement,
+    requirementType: type,
   };
 }
 
@@ -150,6 +206,7 @@ export function createEmptyIfThenRule(): IfThenRule {
 export function ifThenRuleToConditions(rule: IfThenRule, notes?: string): any {
   return {
     ifThen: true,
+    requirementType: rule.requirementType,
     conditions: rule.conditions,
     requirement: {
       ...rule.requirement,
@@ -162,9 +219,35 @@ export function ifThenRuleToConditions(rule: IfThenRule, notes?: string): any {
 // Helper to convert DB conditions back to IF/THEN rule
 export function conditionsToIfThenRule(conditions: any): IfThenRule | null {
   if (!conditions?.ifThen) return null;
+  
+  // Determine requirement type from the stored data
+  let requirementType: 'escort' | 'utility_notice' | 'permit_requirement';
+  
+  if (conditions.requirementType) {
+    requirementType = conditions.requirementType;
+  } else if (conditions.requirement?.notice_hours !== undefined) {
+    requirementType = 'utility_notice';
+  } else if (conditions.requirement?.permit_type_key !== undefined) {
+    requirementType = 'permit_requirement';
+  } else {
+    requirementType = 'escort';
+  }
+  
+  // Provide default requirement based on type
+  let defaultRequirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;
+  
+  if (requirementType === 'escort') {
+    defaultRequirement = { front_escorts: 0, rear_escorts: 0 };
+  } else if (requirementType === 'utility_notice') {
+    defaultRequirement = { notice_hours: 24, utility_types: [] };
+  } else {
+    defaultRequirement = { permit_type_key: '', permit_type_label: '' };
+  }
+  
   return {
     conditions: conditions.conditions || [],
-    requirement: conditions.requirement || { front_escorts: 0, rear_escorts: 0 },
+    requirement: conditions.requirement || defaultRequirement,
+    requirementType,
     priority: conditions.priority,
   };
 }

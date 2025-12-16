@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { DimensionInput } from "@/components/ui/dimension-input";
 import { X } from "lucide-react";
 import { 
   RuleConditionClause, 
@@ -73,6 +74,9 @@ export function ConditionRow({ condition, onChange, onRemove, showAndLabel }: Co
   const renderValueInput = () => {
     if (!attributeConfig) return null;
 
+    // Check if this is a dimensional attribute (feet-based measurement)
+    const isDimensionalAttribute = attributeConfig.unit === 'ft' && attributeConfig.type === 'number';
+
     // Boolean type
     if (attributeConfig.type === 'boolean') {
       return (
@@ -115,6 +119,25 @@ export function ConditionRow({ condition, onChange, onRemove, showAndLabel }: Co
     // Number type with 'between' operator
     if (condition.operator === 'between') {
       const [min, max] = Array.isArray(condition.value) ? condition.value : [0, 0];
+      
+      // Use DimensionInput for dimensional attributes
+      if (isDimensionalAttribute) {
+        return (
+          <div className="flex items-center gap-2">
+            <DimensionInput
+              value={min}
+              onChange={(newMin) => handleValueChange([newMin, max])}
+            />
+            <span className="text-sm text-gray-500">and</span>
+            <DimensionInput
+              value={max}
+              onChange={(newMax) => handleValueChange([min, newMax])}
+            />
+          </div>
+        );
+      }
+      
+      // Regular number input for non-dimensional attributes
       return (
         <div className="flex items-center gap-2">
           <Input
@@ -138,6 +161,17 @@ export function ConditionRow({ condition, onChange, onRemove, showAndLabel }: Co
     }
 
     // Number type (default)
+    // Use DimensionInput for dimensional attributes
+    if (isDimensionalAttribute) {
+      return (
+        <DimensionInput
+          value={typeof condition.value === 'number' ? condition.value : 0}
+          onChange={handleValueChange}
+        />
+      );
+    }
+    
+    // Regular number input for non-dimensional attributes
     return (
       <div className="flex items-center gap-2">
         <Input

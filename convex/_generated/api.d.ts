@@ -23,6 +23,8 @@ import type * as organizations from "../organizations.js";
 import type * as permitTypes from "../permitTypes.js";
 import type * as stateFields from "../stateFields.js";
 import type * as systemFields from "../systemFields.js";
+import type * as trailers from "../trailers.js";
+import type * as trucks from "../trucks.js";
 import type * as users from "../users.js";
 
 import type {
@@ -47,6 +49,8 @@ declare const fullApi: ApiFromModules<{
   permitTypes: typeof permitTypes;
   stateFields: typeof stateFields;
   systemFields: typeof systemFields;
+  trailers: typeof trailers;
+  trucks: typeof trucks;
   users: typeof users;
 }>;
 

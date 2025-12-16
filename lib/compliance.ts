@@ -10,13 +10,16 @@ import { Id } from "@/convex/_generated/dataModel";
 
 // Load/context attributes that rules can evaluate
 export type RuleAttribute = 
-  | 'width_ft' | 'height_ft' | 'length_ft'
+  | 'width_ft' | 'height_ft' | 'length_ft' | 'combined_length_ft'
   | 'front_overhang_ft' | 'rear_overhang_ft'
   | 'gross_weight_lbs' | 'axle_weight_lbs'
-  | 'road_type' | 'num_lanes_same_direction'
+  | 'number_of_axles' | 'axle_spacing_ft'
+  | 'road_type' | 'num_lanes_same_direction' | 'travel_heading'
+  | 'highway_type' | 'speed_limit_mph' | 'on_restricted_route'
   | 'permit_type' | 'is_mobile_home' | 'is_modular_housing'
+  | 'is_superload' | 'is_construction_equipment' | 'vehicle_classification'
   | 'on_bridge' | 'urban_area' | 'time_of_day'
-  | 'min_speed_capable_mph';
+  | 'min_speed_capable_mph' | 'has_police_escort';
 
 export type ConditionOperator = 
   | '>' | '>=' | '<' | '<=' | '=' | '!='
@@ -36,14 +39,71 @@ export interface EscortRequirement {
   rear_escorts: number;
   front_has_height_pole?: boolean;
   rear_has_height_pole?: boolean;
+  
+  // Distance ranges for escort positioning (in feet)
+  front_distance_min_ft?: number;
+  front_distance_max_ft?: number;
+  rear_distance_min_ft?: number;
+  rear_distance_max_ft?: number;
+  
   placement_rule?: 'lead' | 'follow' | 'lead_and_follow';
+  
+  // Conditional positioning based on road context
+  placement_conditions?: {
+    when_multilane?: 'lead' | 'follow';      // 2+ lanes same direction
+    when_single_lane?: 'lead' | 'follow';     // 1 lane same direction
+    when_police_escort?: 'lead' | 'follow';   // if police present
+  };
+  
+  notes?: string;
+}
+
+// Utility notice requirement output (THEN clause)
+export interface UtilityNoticeRequirement {
+  notice_hours: number;           // 24, 48, 72, etc.
+  utility_types: string[];        // ['wire', 'pole', 'underground']
+  contact_name?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  contact_website?: string;
+  estimated_cost_range?: string;  // e.g., "$500-$2000"
+  notes?: string;
+}
+
+// Permit requirement output (THEN clause)
+export interface PermitRequirement {
+  permit_type_key: string;              // References permitTypes table or custom
+  permit_type_label?: string;           // Display name
+  
+  // Cost information
+  estimated_cost_min?: number;          // Minimum cost in dollars
+  estimated_cost_max?: number;          // Maximum cost in dollars
+  cost_notes?: string;                  // Additional cost details
+  
+  // Processing information
+  processing_time_days?: number;        // Typical processing time
+  processing_notes?: string;            // Processing details
+  
+  // Application information
+  application_url?: string;             // Online application link
+  application_method?: 'online' | 'mail' | 'in_person' | 'phone';
+  contact_name?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  
+  // Requirements
+  required_documents?: string[];        // ['proof_of_insurance', 'route_survey', etc.]
+  restrictions?: string;                // Special restrictions or conditions
+  validity_period_days?: number;        // How long permit is valid
+  
   notes?: string;
 }
 
 // Complete IF/THEN rule structure
 export interface IfThenRule {
   conditions: RuleConditionClause[];  // IF (all must match - AND logic)
-  requirement: EscortRequirement;     // THEN
+  requirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;     // THEN
+  requirementType: 'escort' | 'utility_notice' | 'permit_requirement';  // Which type of requirement
   priority?: number;                  // For tie-breaking
 }
 
@@ -58,14 +118,18 @@ export interface AttributeConfig {
 
 // Available attributes for rule conditions
 export const RULE_ATTRIBUTES: AttributeConfig[] = [
-  { value: 'width_ft', label: 'Width', type: 'number', unit: 'ft' },
   { value: 'height_ft', label: 'Height', type: 'number', unit: 'ft' },
-  { value: 'length_ft', label: 'Combined Length', type: 'number', unit: 'ft' },
+  { value: 'width_ft', label: 'Width', type: 'number', unit: 'ft' },
+  { value: 'length_ft', label: 'Load Length', type: 'number', unit: 'ft' },
+  { value: 'combined_length_ft', label: 'Combined Length (Vehicle + Load)', type: 'number', unit: 'ft' },
   { value: 'front_overhang_ft', label: 'Front Overhang', type: 'number', unit: 'ft' },
   { value: 'rear_overhang_ft', label: 'Rear Overhang', type: 'number', unit: 'ft' },
   { value: 'gross_weight_lbs', label: 'Gross Weight', type: 'number', unit: 'lbs' },
   { value: 'axle_weight_lbs', label: 'Axle Weight', type: 'number', unit: 'lbs' },
+  { value: 'number_of_axles', label: 'Number of Axles', type: 'number', unit: 'axles' },
+  { value: 'axle_spacing_ft', label: 'Axle Spacing', type: 'number', unit: 'ft' },
   { value: 'min_speed_capable_mph', label: 'Min Speed Capable', type: 'number', unit: 'mph' },
+  { value: 'speed_limit_mph', label: 'Road Speed Limit', type: 'number', unit: 'mph' },
   { 
     value: 'road_type', 
     label: 'Road Type', 
@@ -75,6 +139,44 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'multi_lane', label: 'Multi Lane' },
       { value: 'interstate', label: 'Interstate' },
       { value: 'all', label: 'All Roads' },
+    ]
+  },
+  { 
+    value: 'num_lanes_same_direction', 
+    label: 'Lanes (Same Direction)', 
+    type: 'enum',
+    options: [
+      { value: '1', label: '1 Lane' },
+      { value: '2', label: '2 Lanes' },
+      { value: '3', label: '3 Lanes' },
+      { value: '4+', label: '4+ Lanes' },
+    ]
+  },
+  { 
+    value: 'travel_heading', 
+    label: 'Travel Direction', 
+    type: 'enum',
+    options: [
+      { value: 'N', label: 'North' },
+      { value: 'NE', label: 'Northeast' },
+      { value: 'E', label: 'East' },
+      { value: 'SE', label: 'Southeast' },
+      { value: 'S', label: 'South' },
+      { value: 'SW', label: 'Southwest' },
+      { value: 'W', label: 'West' },
+      { value: 'NW', label: 'Northwest' },
+    ]
+  },
+  { 
+    value: 'highway_type', 
+    label: 'Highway Type', 
+    type: 'enum',
+    options: [
+      { value: 'interstate', label: 'Interstate' },
+      { value: 'us_highway', label: 'US Highway' },
+      { value: 'state_highway', label: 'State Highway' },
+      { value: 'county_road', label: 'County Road' },
+      { value: 'local_road', label: 'Local Road' },
     ]
   },
   { 
@@ -98,10 +200,28 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'all', label: 'Any Time' },
     ]
   },
+  { 
+    value: 'vehicle_classification', 
+    label: 'Vehicle Classification', 
+    type: 'enum',
+    options: [
+      { value: 'mobile_home', label: 'Mobile Home' },
+      { value: 'modular_housing', label: 'Modular Housing' },
+      { value: 'construction_equipment', label: 'Construction Equipment' },
+      { value: 'manufactured_housing', label: 'Manufactured Housing' },
+      { value: 'agricultural_equipment', label: 'Agricultural Equipment' },
+      { value: 'industrial_equipment', label: 'Industrial Equipment' },
+      { value: 'other', label: 'Other' },
+    ]
+  },
   { value: 'on_bridge', label: 'On Bridge', type: 'boolean' },
   { value: 'urban_area', label: 'Urban Area', type: 'boolean' },
+  { value: 'on_restricted_route', label: 'On Restricted Route', type: 'boolean' },
   { value: 'is_mobile_home', label: 'Is Mobile Home', type: 'boolean' },
   { value: 'is_modular_housing', label: 'Is Modular Housing', type: 'boolean' },
+  { value: 'is_superload', label: 'Is Superload', type: 'boolean' },
+  { value: 'is_construction_equipment', label: 'Is Construction Equipment', type: 'boolean' },
+  { value: 'has_police_escort', label: 'Has Police Escort', type: 'boolean' },
 ];
 
 // Operators available for each attribute type
@@ -129,6 +249,28 @@ export const PLACEMENT_RULES = [
   { value: 'lead', label: 'Lead (Front)' },
   { value: 'follow', label: 'Follow (Rear)' },
   { value: 'lead_and_follow', label: 'Lead and Follow' },
+] as const;
+
+// Utility types for utility notice requirements
+export const UTILITY_TYPES = [
+  { value: 'wire', label: 'Wire Relocation' },
+  { value: 'pole', label: 'Pole Relocation' },
+  { value: 'underground_cable', label: 'Underground Cable' },
+  { value: 'overhead_line', label: 'Overhead Line' },
+  { value: 'transformer', label: 'Transformer' },
+  { value: 'traffic_signal', label: 'Traffic Signal' },
+  { value: 'street_light', label: 'Street Light' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+// Common notice periods (in hours)
+export const COMMON_NOTICE_PERIODS = [
+  { value: 24, label: '24 Hours (1 Day)' },
+  { value: 48, label: '48 Hours (2 Days)' },
+  { value: 72, label: '72 Hours (3 Days)' },
+  { value: 168, label: '1 Week' },
+  { value: 336, label: '2 Weeks' },
+  { value: 720, label: '1 Month' },
 ] as const;
 
 // Helper to get attribute config
@@ -190,6 +332,7 @@ export const RULE_CATEGORIES = [
   { value: "permit_requirement", label: "Permit Requirement" },
   { value: "speed_limit", label: "Speed Limit" },
   { value: "route_restriction", label: "Route Restriction" },
+  { value: "utility_notice", label: "Utility Notice" },
 ] as const;
 
 export type RuleCategory = typeof RULE_CATEGORIES[number]["value"];
@@ -397,4 +540,84 @@ export function getCategoryInfo(category: RuleCategory) {
 // Get status display info
 export function getStatusInfo(status: RuleStatus) {
   return RULE_STATUSES.find(s => s.value === status) || { value: status, label: status, color: "bg-gray-100 text-gray-800" };
+}
+
+// Format utility notice requirements for display
+export function formatUtilityNoticeRequirements(notice: UtilityNoticeRequirement): string {
+  const hours = notice.notice_hours;
+  let timeStr = `${hours} hours`;
+  
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    if (hours % 24 === 0) {
+      timeStr = days === 1 ? '1 day' : `${days} days`;
+    }
+  }
+  
+  const typesStr = notice.utility_types.length > 0 
+    ? notice.utility_types.map(t => UTILITY_TYPES.find(ut => ut.value === t)?.label || t).join(', ')
+    : 'All utilities';
+  
+  return `${timeStr} notice required for ${typesStr}`;
+}
+
+// Type guard for escort requirements
+export function isEscortRequirement(req: EscortRequirement | UtilityNoticeRequirement | PermitRequirement): req is EscortRequirement {
+  return 'front_escorts' in req || 'rear_escorts' in req;
+}
+
+// Type guard for utility notice requirements
+export function isUtilityNoticeRequirement(req: EscortRequirement | UtilityNoticeRequirement | PermitRequirement): req is UtilityNoticeRequirement {
+  return 'notice_hours' in req;
+}
+
+// Type guard for permit requirements
+export function isPermitRequirement(req: EscortRequirement | UtilityNoticeRequirement | PermitRequirement): req is PermitRequirement {
+  return 'permit_type_key' in req;
+}
+
+// Common application methods for permits
+export const APPLICATION_METHODS = [
+  { value: 'online', label: 'Online Application' },
+  { value: 'mail', label: 'Mail' },
+  { value: 'in_person', label: 'In Person' },
+  { value: 'phone', label: 'Phone' },
+] as const;
+
+// Common required documents for permits
+export const COMMON_PERMIT_DOCUMENTS = [
+  { value: 'proof_of_insurance', label: 'Proof of Insurance' },
+  { value: 'vehicle_registration', label: 'Vehicle Registration' },
+  { value: 'route_survey', label: 'Route Survey' },
+  { value: 'engineering_analysis', label: 'Engineering Analysis' },
+  { value: 'weight_receipt', label: 'Weight Receipt' },
+  { value: 'dimension_certification', label: 'Dimension Certification' },
+  { value: 'bond', label: 'Surety Bond' },
+  { value: 'indemnity_agreement', label: 'Indemnity Agreement' },
+  { value: 'utility_clearance', label: 'Utility Clearance Letters' },
+  { value: 'photos', label: 'Vehicle/Load Photos' },
+] as const;
+
+// Format permit requirements for display
+export function formatPermitRequirements(permit: PermitRequirement): string {
+  const parts: string[] = [];
+  
+  parts.push(permit.permit_type_label || permit.permit_type_key);
+  
+  if (permit.estimated_cost_min !== undefined || permit.estimated_cost_max !== undefined) {
+    const min = permit.estimated_cost_min || 0;
+    const max = permit.estimated_cost_max || permit.estimated_cost_min || 0;
+    if (min === max) {
+      parts.push(`$${min}`);
+    } else {
+      parts.push(`$${min}-$${max}`);
+    }
+  }
+  
+  if (permit.processing_time_days) {
+    const days = permit.processing_time_days;
+    parts.push(days === 1 ? '1 day' : `${days} days`);
+  }
+  
+  return parts.join(' • ');
 }

@@ -138,7 +138,17 @@ export default function SystemFieldsPage() {
                   className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
                 >
                   <Database className="h-4 w-4 mr-2" />
-                  Seed 29 Fields
+                  Seed 69 Fields
+                </Button>
+              )}
+              {totalFields > 0 && totalFields < 69 && (
+                <Button
+                  variant="outline"
+                  onClick={handleSeedFields}
+                  className="border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                >
+                  <Database className="h-4 w-4 mr-2" />
+                  Update Fields ({totalFields}/69)
                 </Button>
               )}
               <Button
@@ -170,7 +180,7 @@ export default function SystemFieldsPage() {
               <Database className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No System Fields</h3>
               <p className="text-gray-600 mb-4">
-                Click "Seed 29 Fields" to populate the canonical permit data dictionary.
+                Click "Seed 69 Fields" to populate the canonical permit data dictionary.
               </p>
             </Card>
           ) : (

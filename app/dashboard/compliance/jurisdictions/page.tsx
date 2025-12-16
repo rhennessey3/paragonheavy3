@@ -197,25 +197,40 @@ export default function JurisdictionsPage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card className="p-4">
-              <div className="text-sm text-gray-600">Total States</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {jurisdictions?.filter((j) => j.type === "state").length || 0}
-              </div>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-gray-600">States with Rules</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {jurisdictionsWithRuleCounts.filter((j) => j.ruleCount > 0).length}
-              </div>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-gray-600">Total Rules</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {allRules?.length || 0}
-              </div>
-            </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {selectedJurisdiction ? (
+              <>
+                {/* State-specific stats */}
+                <Card className="p-4">
+                  <div className="text-sm text-gray-600">Total Rules</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {allRules?.filter((r) => r.jurisdictionId === selectedJurisdiction._id).length || 0}
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="text-sm text-gray-600">Published</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {allRules?.filter((r) => r.jurisdictionId === selectedJurisdiction._id && r.status === "published").length || 0}
+                  </div>
+                </Card>
+              </>
+            ) : (
+              <>
+                {/* Global stats */}
+                <Card className="p-4">
+                  <div className="text-sm text-gray-600">Total States</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {jurisdictions?.filter((j) => j.type === "state").length || 0}
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="text-sm text-gray-600">States with Rules</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {jurisdictionsWithRuleCounts.filter((j) => j.ruleCount > 0).length}
+                  </div>
+                </Card>
+              </>
+            )}
           </div>
 
           {viewMode === "table" ? (
