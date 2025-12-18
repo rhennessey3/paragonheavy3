@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Pencil, MapPin, FolderOpen, ChevronRight, Send, ExternalLink, Bell, Settings2, ChevronDown, ChevronUp, Maximize2, Map, PanelLeftClose, PanelLeft, PanelRightOpen, PanelRightClose, X } from "lucide-react";
+import { Search, Plus, Pencil, MapPin, FolderOpen, ChevronRight, Send, ExternalLink, Bell, Settings2, ChevronDown, ChevronUp, Maximize2, Map, PanelLeftClose, PanelLeft, PanelRightOpen, PanelRightClose, X, GripVertical } from "lucide-react";
 import { RouteMap } from "@/components/map/RouteMap";
 import type { Waypoint } from "@/lib/mapbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -33,6 +33,11 @@ const formatRole = (role?: string) => {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 };
+
+// Panel width constraints
+const MIN_PANEL_WIDTH = 320;
+const MAX_PANEL_WIDTH = 900;
+const DEFAULT_PANEL_WIDTH = 420;
 
 export default function CreateNewBidPage() {
   const router = useRouter();
@@ -80,9 +85,20 @@ export default function CreateNewBidPage() {
   const [kingpinToFirstAxle, setKingpinToFirstAxle] = useState("");
   const [showMap, setShowMap] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
-  const [panelWidth, setPanelWidth] = useState(420);
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Load saved panel width from localStorage
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('bidMapPanelWidth');
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10);
+      if (width >= MIN_PANEL_WIDTH && width <= MAX_PANEL_WIDTH) {
+        setPanelWidth(width);
+      }
+    }
+  }, []);
   
   // Section refs for scroll navigation
   const loadRef = useRef<HTMLDivElement>(null);
@@ -142,37 +158,43 @@ export default function CreateNewBidPage() {
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Handle panel resize
-  const startResizing = useCallback((e: React.MouseEvent) => {
+  // Handle panel resize - follows AddRulePanel pattern
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
   }, []);
 
-  const stopResizing = useCallback(() => {
-    setIsResizing(false);
-  }, []);
+  useEffect(() => {
+    if (!isResizing) return;
 
-  const resize = useCallback((e: MouseEvent) => {
-    if (isResizing) {
+    // Add cursor style to body for better UX
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
       const newWidth = window.innerWidth - e.clientX;
-      // Constrain width between 320px and 800px
-      if (newWidth >= 320 && newWidth <= 800) {
+      if (newWidth >= MIN_PANEL_WIDTH && newWidth <= MAX_PANEL_WIDTH) {
         setPanelWidth(newWidth);
       }
-    }
-  }, [isResizing]);
+    };
 
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener('mousemove', resize);
-      window.addEventListener('mouseup', stopResizing);
-    }
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      localStorage.setItem('bidMapPanelWidth', panelWidth.toString());
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      window.removeEventListener('mousemove', resize);
-      window.removeEventListener('mouseup', stopResizing);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
     };
-  }, [isResizing, resize, stopResizing]);
+  }, [isResizing, panelWidth]);
 
   // Load & Route form state
   const [loadRouteData, setLoadRouteData] = useState({
@@ -1107,19 +1129,26 @@ export default function CreateNewBidPage() {
       {/* Sliding Side Panel - Map */}
       <div 
         ref={panelRef}
-        style={{ width: panelWidth }}
-        className={`fixed top-0 right-0 h-screen bg-white border-l border-gray-200 shadow-xl transform z-30 flex flex-col ${
+        className={`fixed inset-y-0 right-0 bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col ${
           showPanel ? 'translate-x-0' : 'translate-x-full'
         } ${isResizing ? '' : 'transition-transform duration-300 ease-in-out'}`}
+        style={{ 
+          width: `${panelWidth}px`,
+          userSelect: isResizing ? 'none' : 'auto'
+        }}
       >
-        {/* Resize Handle */}
+        {/* Resize Handle - follows AddRulePanel pattern */}
         <div
-          onMouseDown={startResizing}
-          className={`absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 transition-colors ${
-            isResizing ? 'bg-blue-500' : 'bg-transparent hover:bg-blue-300'
-          }`}
-          style={{ marginLeft: -2 }}
-        />
+          className="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-col-resize group z-10"
+          onMouseDown={handleResizeStart}
+        >
+          {/* Visible line on hover */}
+          <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-transparent group-hover:bg-blue-500 transition-colors" />
+          {/* Grip icon */}
+          <div className="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 bg-gray-400 group-hover:bg-blue-500 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+            <GripVertical className="h-4 w-4 text-white" />
+          </div>
+        </div>
 
         {/* Panel Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0 bg-gray-50">
@@ -1137,7 +1166,7 @@ export default function CreateNewBidPage() {
         </div>
 
         {/* Map Content */}
-        <div className="flex-1 relative">
+        <div className="flex-1 min-h-0 relative overflow-hidden">
           {/* Map Style Toggle */}
           <div className="absolute top-4 left-4 z-10 flex bg-white rounded-md shadow-sm border border-gray-200">
             <button className="px-3 py-1.5 text-xs font-medium bg-white text-gray-900 rounded-l-md border-r border-gray-200">

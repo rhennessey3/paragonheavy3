@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -10,9 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AgGridReact } from "ag-grid-react";
 import { ColDef, ICellRendererParams, ModuleRegistry, AllCommunityModule } from "ag-grid-community";
-import { Search, Plus, Filter, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
+import { Search, Plus, Filter, ChevronLeft, ChevronRight, ArrowLeft, AlertTriangle, Layers } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
-import { RULE_CATEGORIES, RULE_STATUSES, getStatusInfo, getCategoryInfo } from "@/lib/compliance";
+import { RULE_CATEGORIES, RULE_STATUSES, getStatusInfo, getCategoryInfo, type MatchedRule, type ConflictAnalysis } from "@/lib/compliance";
+import { detectConflicts } from "@/lib/conflict-detection";
+import { ConflictWarningBanner, ConflictIndicatorBadge } from "@/components/compliance/ConflictWarningBanner";
+import { RuleDetailPanel } from "@/components/compliance/RuleDetailPanel";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -22,8 +25,12 @@ interface RuleRow {
   category: string;
   status: string;
   jurisdictionName: string;
+  jurisdictionId?: string;
   summary: string;
   updatedAt: number;
+  conditions?: any;
+  hasConflict?: boolean;
+  conflictCount?: number;
 }
 
 const StatusBadgeRenderer = (params: ICellRendererParams<RuleRow>) => {
@@ -55,10 +62,50 @@ export default function ComplianceRulesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedJurisdiction, setSelectedJurisdiction] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [showConflictBanner, setShowConflictBanner] = useState(true);
+  const [selectedRuleId, setSelectedRuleId] = useState<Id<"complianceRules"> | null>(null);
   const pageSize = 10;
 
   const rules = useQuery(api.compliance.searchRules, {});
   const jurisdictions = useQuery(api.compliance.getJurisdictions, { type: "state" });
+
+  // Run conflict detection on published rules
+  const conflictAnalysis = useMemo<ConflictAnalysis | null>(() => {
+    if (!rules) return null;
+    
+    // Filter to only published rules for conflict detection
+    const publishedRules = rules.filter(r => r.status === "published");
+    
+    // Convert to MatchedRule format for conflict detection
+    const matchedRules: MatchedRule[] = publishedRules.map(rule => ({
+      id: rule._id,
+      title: rule.title,
+      category: rule.category as any,
+      summary: rule.summary,
+      severity: "info" as const,
+      conditions: rule.conditions,
+      jurisdictionId: rule.jurisdictionId,
+      jurisdictionName: rule.jurisdiction?.name,
+      priority: rule.conditions?.priority,
+      requirement: rule.conditions?.requirement,
+      requirementType: rule.conditions?.requirementType,
+    }));
+    
+    return detectConflicts(matchedRules);
+  }, [rules]);
+
+  // Map of rule IDs that are involved in conflicts
+  const conflictingRuleIds = useMemo(() => {
+    if (!conflictAnalysis) return new Map<string, number>();
+    
+    const ruleConflictCounts = new Map<string, number>();
+    for (const group of conflictAnalysis.groups) {
+      for (const rule of group.rules) {
+        ruleConflictCounts.set(rule.id, (ruleConflictCounts.get(rule.id) || 0) + 1);
+      }
+    }
+    return ruleConflictCounts;
+  }, [conflictAnalysis]);
 
   const filteredRules = useMemo(() => {
     if (!rules) return [];
@@ -69,8 +116,12 @@ export default function ComplianceRulesPage() {
       category: rule.category,
       status: rule.status,
       jurisdictionName: rule.jurisdiction?.name || "Unknown",
+      jurisdictionId: rule.jurisdictionId,
       summary: rule.summary,
       updatedAt: rule.updatedAt,
+      conditions: rule.conditions,
+      hasConflict: conflictingRuleIds.has(rule._id),
+      conflictCount: conflictingRuleIds.get(rule._id) || 0,
     }));
 
     if (searchQuery) {
@@ -94,7 +145,7 @@ export default function ComplianceRulesPage() {
     }
 
     return filtered;
-  }, [rules, searchQuery, selectedStatus, selectedCategory, selectedJurisdiction]);
+  }, [rules, searchQuery, selectedStatus, selectedCategory, selectedJurisdiction, conflictingRuleIds]);
 
   const totalPages = Math.ceil(filteredRules.length / pageSize);
   const paginatedRules = filteredRules.slice(
@@ -102,7 +153,30 @@ export default function ComplianceRulesPage() {
     currentPage * pageSize
   );
 
+  // Conflict indicator cell renderer
+  const ConflictRenderer = (params: ICellRendererParams<RuleRow>) => {
+    if (!params.data?.hasConflict) return null;
+    return (
+      <div className="flex items-center justify-center">
+        <Badge className="bg-amber-100 text-amber-700 text-xs">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          {params.data.conflictCount && params.data.conflictCount > 1 
+            ? `${params.data.conflictCount}` 
+            : "!"}
+        </Badge>
+      </div>
+    );
+  };
+
   const columnDefs: ColDef<RuleRow>[] = [
+    {
+      headerName: "",
+      field: "hasConflict",
+      width: 60,
+      sortable: true,
+      cellRenderer: ConflictRenderer,
+      headerTooltip: "Conflict indicator",
+    },
     {
       headerName: "TITLE",
       field: "title",
@@ -111,7 +185,7 @@ export default function ComplianceRulesPage() {
       cellRenderer: (params: ICellRendererParams<RuleRow>) => (
         <button
           className="text-blue-600 hover:underline text-left"
-          onClick={() => router.push(`/dashboard/compliance/rules/${params.data?._id}`)}
+          onClick={() => setSelectedRuleId(params.data?._id || null)}
         >
           {params.value}
         </button>
@@ -181,6 +255,16 @@ export default function ComplianceRulesPage() {
               Create Rule
             </Button>
           </div>
+
+          {/* Conflict Warning Banner */}
+          {showConflictBanner && conflictAnalysis && conflictAnalysis.hasConflicts && (
+            <div className="mb-6">
+              <ConflictWarningBanner
+                conflicts={conflictAnalysis}
+                onDismiss={() => setShowConflictBanner(false)}
+              />
+            </div>
+          )}
 
           {/* Filters */}
           <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
@@ -326,6 +410,15 @@ export default function ComplianceRulesPage() {
           </div>
         </div>
       </div>
+
+      {/* Rule Detail Sidebar */}
+      {selectedRuleId && (
+        <RuleDetailPanel
+          ruleId={selectedRuleId}
+          onClose={() => setSelectedRuleId(null)}
+          onEdit={() => router.push(`/dashboard/compliance/rules/${selectedRuleId}`)}
+        />
+      )}
     </div>
   );
 }

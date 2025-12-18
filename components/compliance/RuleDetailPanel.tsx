@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -23,7 +24,8 @@ import {
   Phone,
   Mail,
   Globe,
-  DollarSign
+  DollarSign,
+  GripVertical
 } from "lucide-react";
 import { 
   getAttributeConfig,
@@ -45,6 +47,10 @@ interface RuleDetailPanelProps {
   onClose: () => void;
   onEdit?: () => void;
 }
+
+const MIN_WIDTH = 400;
+const MAX_WIDTH = 1200;
+const DEFAULT_WIDTH = 500;
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   dimension_limit: { label: "Dimension Limit", icon: Scale, color: "bg-purple-100 text-purple-700" },
@@ -94,9 +100,64 @@ function formatValue(value: any, attribute: string): string {
 export function RuleDetailPanel({ ruleId, onClose, onEdit }: RuleDetailPanelProps) {
   const rule = useQuery(api.compliance.getRuleById, { ruleId });
 
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Load saved width from localStorage
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('ruleDetailPanelWidth');
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10);
+      if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
+        setPanelWidth(width);
+      }
+    }
+  }, []);
+
+  // Handle resize
+  useEffect(() => {
+    if (!isResizing) return;
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
+        setPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      localStorage.setItem('ruleDetailPanelWidth', panelWidth.toString());
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, panelWidth]);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
   if (!rule) {
     return (
-      <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex items-center justify-center">
+      <div 
+        className="fixed inset-y-0 right-0 bg-white shadow-2xl border-l border-gray-200 z-50 flex items-center justify-center"
+        style={{ width: `${panelWidth}px` }}
+      >
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
       </div>
     );
@@ -114,7 +175,24 @@ export function RuleDetailPanel({ ruleId, onClose, onEdit }: RuleDetailPanelProp
      requirement && isPermitRequirement(requirement) ? 'permit_requirement' : 'escort');
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+    <div 
+      ref={panelRef}
+      className="fixed inset-y-0 right-0 bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col"
+      style={{ 
+        width: `${panelWidth}px`,
+        userSelect: isResizing ? 'none' : 'auto'
+      }}
+    >
+      {/* Resize Handle */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 transition-colors group"
+        onMouseDown={handleResizeStart}
+      >
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 bg-gray-300 group-hover:bg-blue-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <GripVertical className="h-4 w-4 text-white" />
+        </div>
+      </div>
+
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center justify-between">

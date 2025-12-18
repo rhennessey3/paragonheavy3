@@ -12,6 +12,7 @@ import type * as addRealData from "../addRealData.js";
 import type * as auth from "../auth.js";
 import type * as clearConvexData from "../clearConvexData.js";
 import type * as compliance from "../compliance.js";
+import type * as conflictResolutions from "../conflictResolutions.js";
 import type * as debug from "../debug.js";
 import type * as debug_invite from "../debug_invite.js";
 import type * as debug_state from "../debug_state.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   clearConvexData: typeof clearConvexData;
   compliance: typeof compliance;
+  conflictResolutions: typeof conflictResolutions;
   debug: typeof debug;
   debug_invite: typeof debug_invite;
   debug_state: typeof debug_state;

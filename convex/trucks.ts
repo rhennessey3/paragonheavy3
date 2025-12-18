@@ -300,3 +300,5 @@ export const getDefaultTruckCount = query({
     return trucks.filter((t) => t.isDefault).length;
   },
 });
+
+

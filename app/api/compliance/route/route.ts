@@ -7,8 +7,10 @@ import {
   determineSeverity,
   type LoadParams, 
   type ComplianceResponse,
-  type RuleCategory 
+  type RuleCategory,
+  type MatchedRule,
 } from "@/lib/compliance";
+import { detectConflicts } from "@/lib/conflict-detection";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -111,6 +113,9 @@ export async function POST(request: Request) {
     let escortRequired = false;
     let curfewsDetected = false;
     const permitsRequired: string[] = [];
+    
+    // Collect all matched rules for conflict detection
+    const allMatchedRules: MatchedRule[] = [];
 
     const jurisdictionRules = jurisdictionData.map((jd) => {
       const applicableRules = jd.rules
@@ -134,13 +139,30 @@ export async function POST(request: Request) {
             }
           }
 
-          return {
+          const matchedRule: MatchedRule = {
             id: rule._id as string,
             category: rule.category as RuleCategory,
             title: rule.title as string,
             severity: determineSeverity(rule.category, rule.conditions),
             summary: rule.summary as string,
             conditions: rule.conditions,
+            jurisdictionId: jd.jurisdictionId,
+            jurisdictionName: jd.jurisdictionName,
+            priority: rule.conditions?.priority,
+            requirement: rule.conditions?.requirement,
+            requirementType: rule.conditions?.requirementType,
+          };
+          
+          // Add to all matched rules for conflict detection
+          allMatchedRules.push(matchedRule);
+
+          return {
+            id: matchedRule.id,
+            category: matchedRule.category,
+            title: matchedRule.title,
+            severity: matchedRule.severity,
+            summary: matchedRule.summary,
+            conditions: matchedRule.conditions,
           };
         })
         .filter((rule): rule is NonNullable<typeof rule> => rule !== null);
@@ -152,6 +174,9 @@ export async function POST(request: Request) {
       };
     }).filter((jr) => jr.rules.length > 0);
 
+    // Run conflict detection on all matched rules
+    const conflictAnalysis = detectConflicts(allMatchedRules);
+
     const response: ComplianceResponse = {
       routeId: crypto.randomUUID(),
       aggregatedSummary: {
@@ -161,9 +186,12 @@ export async function POST(request: Request) {
         escortDetails: escortRequired ? "See jurisdiction-specific requirements" : undefined,
         curfewsDetected,
         permitsRequired,
+        hasConflicts: conflictAnalysis.hasConflicts,
+        totalConflicts: conflictAnalysis.groups.length,
       },
       segments: [], // Segment-level detail for Phase 2
       jurisdictionRules,
+      conflicts: conflictAnalysis,
     };
 
     return NextResponse.json(response);

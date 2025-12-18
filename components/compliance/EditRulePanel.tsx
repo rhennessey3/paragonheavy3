@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { X, Save, Trash2 } from "lucide-react";
+import { X, Save, Trash2, GripVertical } from "lucide-react";
 import { IfThenRuleBuilder, createEmptyIfThenRule, ifThenRuleToConditions, conditionsToIfThenRule } from "@/components/compliance/IfThenRuleBuilder";
 import { RuleConditionsEditor } from "@/components/compliance/RuleConditionsEditor";
 import { RULE_CATEGORIES, type RuleCondition, type RuleCategory, type IfThenRule } from "@/lib/compliance";
@@ -20,11 +20,19 @@ interface EditRulePanelProps {
   onSuccess?: () => void;
 }
 
+const MIN_WIDTH = 400;
+const MAX_WIDTH = 1200;
+const DEFAULT_WIDTH = 500;
+
 export function EditRulePanel({ ruleId, onClose, onSuccess }: EditRulePanelProps) {
   const rule = useQuery(api.compliance.getRuleById, { ruleId });
   const updateRule = useMutation(api.compliance.updateRule);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const [formData, setFormData] = useState({
     category: "" as RuleCategory | "",
     title: "",
@@ -37,6 +45,54 @@ export function EditRulePanel({ ruleId, onClose, onSuccess }: EditRulePanelProps
   const [conditions, setConditions] = useState<RuleCondition>({});
   const [ifThenRule, setIfThenRule] = useState<IfThenRule>(createEmptyIfThenRule());
   const [initialized, setInitialized] = useState(false);
+
+  // Load saved width from localStorage
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('editRulePanelWidth');
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10);
+      if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
+        setPanelWidth(width);
+      }
+    }
+  }, []);
+
+  // Handle resize
+  useEffect(() => {
+    if (!isResizing) return;
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
+        setPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      localStorage.setItem('editRulePanelWidth', panelWidth.toString());
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, panelWidth]);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
 
   // Initialize form data when rule loads
   useEffect(() => {
@@ -102,14 +158,34 @@ export function EditRulePanel({ ruleId, onClose, onSuccess }: EditRulePanelProps
 
   if (!rule) {
     return (
-      <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex items-center justify-center">
+      <div 
+        className="fixed inset-y-0 right-0 bg-white shadow-2xl border-l border-gray-200 z-50 flex items-center justify-center"
+        style={{ width: `${panelWidth}px` }}
+      >
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+    <div 
+      ref={panelRef}
+      className="fixed inset-y-0 right-0 bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col"
+      style={{ 
+        width: `${panelWidth}px`,
+        userSelect: isResizing ? 'none' : 'auto'
+      }}
+    >
+      {/* Resize Handle */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 transition-colors group"
+        onMouseDown={handleResizeStart}
+      >
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 bg-gray-300 group-hover:bg-blue-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <GripVertical className="h-4 w-4 text-white" />
+        </div>
+      </div>
+
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center justify-between">

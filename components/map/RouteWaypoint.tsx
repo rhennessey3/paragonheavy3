@@ -27,31 +27,48 @@ export function RouteWaypoint({ map, lat, lng, order, onDrag, onDelete }: RouteW
       </div>
     `;
 
-    // Add styles
-    el.style.width = "40px";
-    el.style.height = "40px";
+    // Add styles - pin points downward
     el.style.cursor = "grab";
-    el.style.position = "relative";
     
     const pinStyle = `
-      .route-waypoint-marker .waypoint-pin {
-        width: 40px;
+      .route-waypoint-marker {
+        width: 32px;
         height: 40px;
+        position: relative;
+      }
+      .route-waypoint-marker .waypoint-pin {
+        width: 32px;
+        height: 32px;
         background: #3b82f6;
         border: 3px solid white;
-        border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg);
+        border-radius: 50%;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         display: flex;
         align-items: center;
         justify-content: center;
-        position: relative;
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+      .route-waypoint-marker .waypoint-pin::after {
+        content: '';
+        position: absolute;
+        bottom: -8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 0;
+        border-left: 8px solid transparent;
+        border-right: 8px solid transparent;
+        border-top: 10px solid #3b82f6;
+        filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
       }
       .route-waypoint-marker .waypoint-number {
-        transform: rotate(45deg);
         color: white;
         font-weight: bold;
         font-size: 14px;
+        position: relative;
+        z-index: 1;
       }
     `;
     
@@ -63,10 +80,11 @@ export function RouteWaypoint({ map, lat, lng, order, onDrag, onDelete }: RouteW
       document.head.appendChild(styleSheet);
     }
 
-    // Create marker
+    // Create marker with anchor at bottom center (where the pin points)
     const marker = new mapboxgl.Marker({
       element: el,
       draggable: !!onDrag,
+      anchor: "bottom",
     })
       .setLngLat([lng, lat])
       .addTo(map);

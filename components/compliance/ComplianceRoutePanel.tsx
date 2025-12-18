@@ -13,11 +13,15 @@ import {
   Clock,
   FileText,
   Users,
-  X
+  X,
+  AlertCircle,
+  Layers
 } from "lucide-react";
 import { 
   type ComplianceResponse, 
   type RuleSeverity,
+  type ConflictGroup,
+  type ConflictSeverity,
   getCategoryInfo,
   formatEscortRequirements
 } from "@/lib/compliance";
@@ -63,15 +67,58 @@ const SeverityBadge = ({ severity }: { severity: RuleSeverity }) => {
   );
 };
 
+const ConflictSeverityBadge = ({ severity }: { severity: ConflictSeverity }) => {
+  const colors = {
+    critical: "bg-red-100 text-red-800",
+    warning: "bg-yellow-100 text-yellow-800",
+    info: "bg-blue-100 text-blue-800",
+  };
+  
+  const labels = {
+    critical: "Critical",
+    warning: "Warning",
+    info: "Info",
+  };
+
+  return (
+    <Badge className={colors[severity]} variant="secondary">
+      {labels[severity]}
+    </Badge>
+  );
+};
+
+const ConflictTypeLabel = ({ type }: { type: ConflictGroup['type'] }) => {
+  const labels = {
+    category_overlap: "Category Overlap",
+    condition_overlap: "Condition Overlap",
+    requirement_contradiction: "Requirement Conflict",
+  };
+  return <span className="text-xs text-gray-500">{labels[type]}</span>;
+};
+
 export function ComplianceRoutePanel({ 
   complianceData, 
   isLoading,
   onClose 
 }: ComplianceRoutePanelProps) {
   const [expandedJurisdictions, setExpandedJurisdictions] = useState<Set<string>>(new Set());
+  const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(new Set());
+  const [showConflictPanel, setShowConflictPanel] = useState(false);
 
   const toggleJurisdiction = (id: string) => {
     setExpandedJurisdictions(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleConflict = (id: string) => {
+    setExpandedConflicts(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -169,8 +216,116 @@ export function ComplianceRoutePanel({
               Permits: {aggregatedSummary.permitsRequired.join(", ")}
             </Badge>
           )}
+          {aggregatedSummary.hasConflicts && (
+            <Badge 
+              className="bg-amber-100 text-amber-800 cursor-pointer hover:bg-amber-200"
+              onClick={() => setShowConflictPanel(!showConflictPanel)}
+            >
+              <AlertCircle className="h-3 w-3 mr-1" />
+              {aggregatedSummary.totalConflicts} {aggregatedSummary.totalConflicts === 1 ? 'Conflict' : 'Conflicts'} Detected
+            </Badge>
+          )}
         </div>
       </div>
+
+      {/* Conflict Warning Panel */}
+      {showConflictPanel && complianceData.conflicts && complianceData.conflicts.hasConflicts && (
+        <div className="border-b border-amber-200 bg-amber-50">
+          <div className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-amber-800">
+                <Layers className="h-4 w-4" />
+                <span className="font-medium text-sm">Rule Conflicts</span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
+                onClick={() => setShowConflictPanel(false)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <p className="text-xs text-amber-700 mb-3">
+              Multiple rules have been triggered that may conflict with each other. Review the conflicts below to determine the appropriate requirements.
+            </p>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {complianceData.conflicts.groups.map((conflict) => {
+                const isExpanded = expandedConflicts.has(conflict.id);
+                return (
+                  <div 
+                    key={conflict.id} 
+                    className="bg-white border border-amber-200 rounded-lg overflow-hidden"
+                  >
+                    <button
+                      className="w-full p-2 flex items-center justify-between hover:bg-amber-50 text-left"
+                      onClick={() => toggleConflict(conflict.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? (
+                          <ChevronDown className="h-3 w-3 text-amber-600" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-amber-600" />
+                        )}
+                        <span className="text-sm font-medium text-gray-800">
+                          {conflict.description}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <ConflictTypeLabel type={conflict.type} />
+                        <ConflictSeverityBadge severity={conflict.severity} />
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="px-3 pb-3 border-t border-amber-100">
+                        <p className="text-xs text-gray-600 mt-2 mb-2">{conflict.details}</p>
+                        <div className="space-y-1">
+                          <span className="text-xs font-medium text-gray-700">Conflicting Rules:</span>
+                          {conflict.rules.map((rule) => (
+                            <div 
+                              key={rule.id}
+                              className="text-xs bg-gray-50 rounded px-2 py-1 flex items-center justify-between"
+                            >
+                              <span className="text-gray-800">{rule.title}</span>
+                              {rule.jurisdictionName && (
+                                <span className="text-gray-500">{rule.jurisdictionName}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {conflict.suggestedResolution && (
+                          <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-800">
+                            <strong>Suggested Resolution:</strong> {conflict.suggestedResolution}
+                          </div>
+                        )}
+                        {conflict.contradictions && conflict.contradictions.length > 0 && (
+                          <div className="mt-2">
+                            <span className="text-xs font-medium text-gray-700">Contradicting Values:</span>
+                            {conflict.contradictions.map((c, i) => (
+                              <div key={i} className="mt-1 text-xs">
+                                <span className="text-gray-600">{c.field}: </span>
+                                {c.values.map((v, j) => (
+                                  <span key={j} className="inline-flex items-center gap-1">
+                                    <Badge variant="outline" className="text-xs py-0 h-5">
+                                      {String(v.value)}
+                                    </Badge>
+                                    <span className="text-gray-500">({v.ruleTitle})</span>
+                                    {j < c.values.length - 1 && <span className="mx-1">vs</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Jurisdiction List */}
       <div className="max-h-80 overflow-y-auto">

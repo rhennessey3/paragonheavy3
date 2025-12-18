@@ -11,7 +11,7 @@ import { Id } from "@/convex/_generated/dataModel";
 // Load/context attributes that rules can evaluate
 export type RuleAttribute = 
   | 'width_ft' | 'height_ft' | 'length_ft' | 'combined_length_ft'
-  | 'front_overhang_ft' | 'rear_overhang_ft'
+  | 'front_overhang_ft' | 'rear_overhang_ft' | 'left_overhang_ft' | 'right_overhang_ft'
   | 'gross_weight_lbs' | 'axle_weight_lbs'
   | 'number_of_axles' | 'axle_spacing_ft'
   | 'road_type' | 'num_lanes_same_direction' | 'travel_heading'
@@ -124,6 +124,8 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
   { value: 'combined_length_ft', label: 'Combined Length (Vehicle + Load)', type: 'number', unit: 'ft' },
   { value: 'front_overhang_ft', label: 'Front Overhang', type: 'number', unit: 'ft' },
   { value: 'rear_overhang_ft', label: 'Rear Overhang', type: 'number', unit: 'ft' },
+  { value: 'left_overhang_ft', label: 'Left Overhang (Driver Side)', type: 'number', unit: 'ft' },
+  { value: 'right_overhang_ft', label: 'Right Overhang (Passenger Side)', type: 'number', unit: 'ft' },
   { value: 'gross_weight_lbs', label: 'Gross Weight', type: 'number', unit: 'lbs' },
   { value: 'axle_weight_lbs', label: 'Axle Weight', type: 'number', unit: 'lbs' },
   { value: 'number_of_axles', label: 'Number of Axles', type: 'number', unit: 'axles' },
@@ -376,6 +378,9 @@ export type ComplianceResponse = {
     escortDetails?: string;
     curfewsDetected: boolean;
     permitsRequired: string[];
+    // Conflict summary
+    hasConflicts?: boolean;
+    totalConflicts?: number;
   };
   segments: ComplianceSegment[];
   jurisdictionRules: {
@@ -390,6 +395,8 @@ export type ComplianceResponse = {
       conditions: RuleCondition;
     }[];
   }[];
+  // Conflict analysis results
+  conflicts?: ConflictAnalysis;
 };
 
 // US States data for seeding
@@ -620,4 +627,84 @@ export function formatPermitRequirements(permit: PermitRequirement): string {
   }
   
   return parts.join(' • ');
+}
+
+// =============================================================================
+// Conflict Detection Types
+// =============================================================================
+
+// Types of conflicts that can occur between rules
+export type ConflictType = 
+  | 'category_overlap'           // Multiple rules of same category triggered
+  | 'condition_overlap'          // Rules with overlapping condition ranges
+  | 'requirement_contradiction'; // Rules with conflicting outputs
+
+// Severity levels for conflicts
+export type ConflictSeverity = 'info' | 'warning' | 'critical';
+
+// A rule that has been matched/triggered during compliance checking
+export interface MatchedRule {
+  id: string;
+  title: string;
+  category: RuleCategory;
+  summary: string;
+  severity: RuleSeverity;
+  conditions: RuleCondition | any; // Legacy or IfThen conditions
+  jurisdictionId?: string;
+  jurisdictionName?: string;
+  priority?: number;
+  // For IfThen rules, the requirement output
+  requirement?: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;
+  requirementType?: 'escort' | 'utility_notice' | 'permit_requirement';
+}
+
+// A group of rules that conflict with each other
+export interface ConflictGroup {
+  id: string;
+  type: ConflictType;
+  rules: MatchedRule[];
+  severity: ConflictSeverity;
+  description: string;
+  details?: string;
+  suggestedResolution?: string;
+  // For condition overlaps, the specific attributes that overlap
+  overlappingAttributes?: RuleAttribute[];
+  // For requirement contradictions, what specifically contradicts
+  contradictions?: {
+    field: string;
+    values: Array<{ ruleId: string; ruleTitle: string; value: any }>;
+  }[];
+}
+
+// Result of conflict analysis
+export interface ConflictAnalysis {
+  hasConflicts: boolean;
+  groups: ConflictGroup[];
+  totalConflictingRules: number;
+  // Summary counts by type
+  categoryOverlaps: number;
+  conditionOverlaps: number;
+  requirementContradictions: number;
+  // Auto-resolved requirements using cumulative max strategy
+  resolvedRequirements?: {
+    escort?: EscortRequirement;
+    utilityNotice?: UtilityNoticeRequirement;
+  };
+}
+
+// Resolution strategies for conflicts
+export type ResolutionStrategy = 
+  | 'priority'      // Higher priority rule wins
+  | 'specificity'   // More specific conditions win
+  | 'cumulative'    // Apply all rules (e.g., take max escorts)
+  | 'manual';       // User chooses per conflict
+
+// Resolution record for a specific conflict
+export interface ConflictResolution {
+  conflictGroupId: string;
+  strategy: ResolutionStrategy;
+  winningRuleId?: string;  // For priority/specificity/manual strategies
+  resolvedBy?: string;
+  resolvedAt?: number;
+  notes?: string;
 }

@@ -448,6 +448,163 @@ export const getPublishedRulesForStates = query({
 });
 
 // ============================================
+// CONFLICT ANALYSIS FUNCTIONS
+// ============================================
+
+/**
+ * Get all published rules for a jurisdiction in a format suitable for conflict analysis.
+ * This is used by the Compliance Studio to show potential conflicts.
+ */
+export const getRulesForConflictAnalysis = query({
+  args: {
+    jurisdictionId: v.id("jurisdictions"),
+    includeChildren: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const jurisdiction = await ctx.db.get(args.jurisdictionId);
+    
+    if (!jurisdiction) {
+      return { jurisdiction: null, rules: [] };
+    }
+
+    // Get rules for the main jurisdiction
+    const mainRules = await ctx.db
+      .query("complianceRules")
+      .withIndex("by_jurisdiction_status", (q) => 
+        q.eq("jurisdictionId", args.jurisdictionId).eq("status", "published")
+      )
+      .collect();
+
+    // Filter by effective dates
+    const activeMainRules = mainRules.filter(rule => {
+      if (rule.effectiveFrom && rule.effectiveFrom > now) return false;
+      if (rule.effectiveTo && rule.effectiveTo < now) return false;
+      return true;
+    });
+
+    // Format rules for conflict analysis
+    const formattedRules = activeMainRules.map(rule => ({
+      id: rule._id,
+      title: rule.title,
+      category: rule.category,
+      summary: rule.summary,
+      conditions: rule.conditions,
+      jurisdictionId: jurisdiction._id,
+      jurisdictionName: jurisdiction.name,
+      priority: rule.conditions?.priority,
+      requirement: rule.conditions?.requirement,
+      requirementType: rule.conditions?.requirementType,
+      source: rule.source,
+      effectiveFrom: rule.effectiveFrom,
+      effectiveTo: rule.effectiveTo,
+    }));
+
+    // Optionally include child jurisdiction rules
+    let childRules: typeof formattedRules = [];
+    if (args.includeChildren) {
+      const children = await ctx.db
+        .query("jurisdictions")
+        .withIndex("by_parent", (q) => q.eq("parentId", args.jurisdictionId))
+        .collect();
+
+      for (const child of children) {
+        const childJurisdictionRules = await ctx.db
+          .query("complianceRules")
+          .withIndex("by_jurisdiction_status", (q) => 
+            q.eq("jurisdictionId", child._id).eq("status", "published")
+          )
+          .collect();
+
+        const activeChildRules = childJurisdictionRules.filter(rule => {
+          if (rule.effectiveFrom && rule.effectiveFrom > now) return false;
+          if (rule.effectiveTo && rule.effectiveTo < now) return false;
+          return true;
+        });
+
+        const formattedChildRules = activeChildRules.map(rule => ({
+          id: rule._id,
+          title: rule.title,
+          category: rule.category,
+          summary: rule.summary,
+          conditions: rule.conditions,
+          jurisdictionId: child._id,
+          jurisdictionName: child.name,
+          priority: rule.conditions?.priority,
+          requirement: rule.conditions?.requirement,
+          requirementType: rule.conditions?.requirementType,
+          source: rule.source,
+          effectiveFrom: rule.effectiveFrom,
+          effectiveTo: rule.effectiveTo,
+        }));
+
+        childRules = [...childRules, ...formattedChildRules];
+      }
+    }
+
+    return {
+      jurisdiction: {
+        id: jurisdiction._id,
+        name: jurisdiction.name,
+        type: jurisdiction.type,
+        abbreviation: jurisdiction.abbreviation,
+      },
+      rules: [...formattedRules, ...childRules],
+      totalRules: formattedRules.length + childRules.length,
+      mainJurisdictionRules: formattedRules.length,
+      childJurisdictionRules: childRules.length,
+    };
+  },
+});
+
+/**
+ * Get a summary of potential conflicts for a jurisdiction without full rule details.
+ * Useful for showing conflict indicators in rule lists.
+ */
+export const getJurisdictionConflictSummary = query({
+  args: {
+    jurisdictionId: v.id("jurisdictions"),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    
+    // Get all published rules for this jurisdiction
+    const rules = await ctx.db
+      .query("complianceRules")
+      .withIndex("by_jurisdiction_status", (q) => 
+        q.eq("jurisdictionId", args.jurisdictionId).eq("status", "published")
+      )
+      .collect();
+
+    // Filter by effective dates
+    const activeRules = rules.filter(rule => {
+      if (rule.effectiveFrom && rule.effectiveFrom > now) return false;
+      if (rule.effectiveTo && rule.effectiveTo < now) return false;
+      return true;
+    });
+
+    // Count rules by category
+    const categoryCount: Record<string, number> = {};
+    for (const rule of activeRules) {
+      categoryCount[rule.category] = (categoryCount[rule.category] || 0) + 1;
+    }
+
+    // Find categories with potential overlaps (2+ rules)
+    const potentialCategoryOverlaps = Object.entries(categoryCount)
+      .filter(([_, count]) => count > 1)
+      .map(([category, count]) => ({ category, count }));
+
+    // Return summary info (detailed conflict detection done client-side)
+    return {
+      totalPublishedRules: activeRules.length,
+      hasPotentialConflicts: potentialCategoryOverlaps.length > 0,
+      potentialCategoryOverlaps,
+      rulesByCategory: categoryCount,
+    };
+  },
+});
+
+// ============================================
 // JURISDICTION EDITORS FUNCTIONS
 // ============================================
 

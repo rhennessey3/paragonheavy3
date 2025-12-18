@@ -1126,3 +1126,5 @@ export default function EquipmentPage() {
     </div>
   );
 }
+
+

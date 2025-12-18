@@ -230,6 +230,7 @@ export default defineSchema({
     ),
     geometry: v.optional(v.any()), // GeoJSON for corridor/point rules
     conditions: v.any(), // JSON: RuleCondition type
+    priority: v.optional(v.number()), // For conflict resolution - higher priority wins
     createdBy: v.string(),
     updatedBy: v.string(),
     createdAt: v.number(),
@@ -239,6 +240,47 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_category", ["category"])
     .index("by_jurisdiction_status", ["jurisdictionId", "status"]),
+
+  // Conflict Resolutions - tracks how rule conflicts have been resolved
+  conflictResolutions: defineTable({
+    jurisdictionId: v.id("jurisdictions"),
+    // The two rules involved in the conflict
+    ruleA: v.id("complianceRules"),
+    ruleB: v.id("complianceRules"),
+    // Type of conflict
+    conflictType: v.union(
+      v.literal("category_overlap"),
+      v.literal("condition_overlap"),
+      v.literal("requirement_contradiction")
+    ),
+    // Resolution decision
+    resolution: v.union(
+      v.literal("rule_a_wins"),     // Rule A takes precedence
+      v.literal("rule_b_wins"),     // Rule B takes precedence
+      v.literal("cumulative"),      // Both rules apply (merge requirements)
+      v.literal("unresolved")       // No decision made yet
+    ),
+    // For cumulative resolutions, the merged requirement
+    mergedRequirement: v.optional(v.any()),
+    // Resolution strategy used
+    strategy: v.optional(v.union(
+      v.literal("priority"),        // Higher priority wins
+      v.literal("specificity"),     // More specific wins
+      v.literal("cumulative"),      // Combine requirements
+      v.literal("manual")           // Manual decision
+    )),
+    // Audit trail
+    resolvedBy: v.optional(v.string()),  // Clerk user ID
+    resolvedAt: v.optional(v.number()),  // Timestamp
+    notes: v.optional(v.string()),        // Explanation for manual decisions
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jurisdiction", ["jurisdictionId"])
+    .index("by_rule_a", ["ruleA"])
+    .index("by_rule_b", ["ruleB"])
+    .index("by_rules", ["ruleA", "ruleB"])
+    .index("by_resolution", ["resolution"]),
 
   // Jurisdiction Editors (who can manage rules for which jurisdictions)
   jurisdictionEditors: defineTable({

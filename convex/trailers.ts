@@ -220,3 +220,5 @@ export const getDefaultTrailerCount = query({
     return trailers.filter((t) => t.isDefault).length;
   },
 });
+
+

@@ -66,6 +66,23 @@ export function RouteMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapboxToken]); // Only depend on mapboxToken, not initialCenter/initialZoom
 
+  // Handle container resize - important for resizable panels
+  useEffect(() => {
+    if (!mapContainer.current || !map.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (map.current) {
+        map.current.resize();
+      }
+    });
+
+    resizeObserver.observe(mapContainer.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [mapLoaded]);
+
   // Handle map clicks to add waypoints
   useEffect(() => {
     if (!map.current || !mapboxToken) return;
