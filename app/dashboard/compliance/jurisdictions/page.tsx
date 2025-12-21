@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { AgGridReact } from "ag-grid-react";
 import { ColDef, ICellRendererParams, ModuleRegistry, AllCommunityModule } from "ag-grid-community";
-import { Search, ArrowLeft, ChevronLeft, ChevronRight, FileText, Layers, Map, List } from "lucide-react";
+import { Search, ArrowLeft, ChevronLeft, ChevronRight, Shield, Layers, Map, List } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
 import { JurisdictionMap, JurisdictionData } from "@/components/compliance/JurisdictionMap";
 import { JurisdictionInfoPanel } from "@/components/compliance/JurisdictionInfoPanel";
@@ -23,7 +23,7 @@ interface JurisdictionRow {
   abbreviation: string;
   type: string;
   fipsCode: string;
-  ruleCount: number;
+  policyCount: number;
 }
 
 export default function JurisdictionsPage() {
@@ -35,34 +35,34 @@ export default function JurisdictionsPage() {
   const pageSize = 15;
 
   const jurisdictions = useQuery(api.compliance.getJurisdictions, { type: "state" });
-  const allRules = useQuery(api.compliance.searchRules, {});
+  const allPolicies = useQuery(api.policies.searchPolicies, {});
 
-  const jurisdictionsWithRuleCounts = useMemo(() => {
+  const jurisdictionsWithPolicyCounts = useMemo(() => {
     if (!jurisdictions) return [];
 
     return jurisdictions.map((j) => {
-      const ruleCount = allRules?.filter((r) => r.jurisdictionId === j._id).length || 0;
+      const policyCount = allPolicies?.filter((p) => p.jurisdictionId === j._id).length || 0;
       return {
         _id: j._id,
         name: j.name,
         abbreviation: j.abbreviation || "",
         type: j.type,
         fipsCode: j.fipsCode || "",
-        ruleCount,
+        policyCount,
       };
     });
-  }, [jurisdictions, allRules]);
+  }, [jurisdictions, allPolicies]);
 
   const filteredJurisdictions = useMemo(() => {
-    if (!searchQuery) return jurisdictionsWithRuleCounts;
+    if (!searchQuery) return jurisdictionsWithPolicyCounts;
 
     const query = searchQuery.toLowerCase();
-    return jurisdictionsWithRuleCounts.filter(
+    return jurisdictionsWithPolicyCounts.filter(
       (j) =>
         j.name.toLowerCase().includes(query) ||
         j.abbreviation.toLowerCase().includes(query)
     );
-  }, [jurisdictionsWithRuleCounts, searchQuery]);
+  }, [jurisdictionsWithPolicyCounts, searchQuery]);
 
   const totalPages = Math.ceil(filteredJurisdictions.length / pageSize);
   const paginatedJurisdictions = filteredJurisdictions.slice(
@@ -70,12 +70,12 @@ export default function JurisdictionsPage() {
     currentPage * pageSize
   );
 
-  const RuleCountRenderer = (params: ICellRendererParams<JurisdictionRow>) => {
+  const PolicyCountRenderer = (params: ICellRendererParams<JurisdictionRow>) => {
     const count = params.value as number;
     return (
       <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-gray-400" />
-        <span>{count} {count === 1 ? "rule" : "rules"}</span>
+        <Shield className="h-4 w-4 text-gray-400" />
+        <span>{count} {count === 1 ? "policy" : "policies"}</span>
       </div>
     );
   };
@@ -116,11 +116,11 @@ export default function JurisdictionsPage() {
       sortable: true,
     },
     {
-      headerName: "RULES",
-      field: "ruleCount",
+      headerName: "POLICIES",
+      field: "policyCount",
       width: 130,
       sortable: true,
-      cellRenderer: RuleCountRenderer,
+      cellRenderer: PolicyCountRenderer,
     },
     {
       headerName: "ACTIONS",
@@ -129,9 +129,9 @@ export default function JurisdictionsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => router.push(`/dashboard/compliance/rules?jurisdiction=${params.data?.name}`)}
+          onClick={() => router.push(`/dashboard/compliance/policies?jurisdiction=${params.data?._id}`)}
         >
-          View Rules
+          View Policies
         </Button>
       ),
     },
@@ -202,15 +202,15 @@ export default function JurisdictionsPage() {
               <>
                 {/* State-specific stats */}
                 <Card className="p-4">
-                  <div className="text-sm text-gray-600">Total Rules</div>
+                  <div className="text-sm text-gray-600">Total Policies</div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {allRules?.filter((r) => r.jurisdictionId === selectedJurisdiction._id).length || 0}
+                    {allPolicies?.filter((p) => p.jurisdictionId === selectedJurisdiction._id).length || 0}
                   </div>
                 </Card>
                 <Card className="p-4">
                   <div className="text-sm text-gray-600">Published</div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {allRules?.filter((r) => r.jurisdictionId === selectedJurisdiction._id && r.status === "published").length || 0}
+                    {allPolicies?.filter((p) => p.jurisdictionId === selectedJurisdiction._id && p.status === "published").length || 0}
                   </div>
                 </Card>
               </>
@@ -224,9 +224,9 @@ export default function JurisdictionsPage() {
                   </div>
                 </Card>
                 <Card className="p-4">
-                  <div className="text-sm text-gray-600">States with Rules</div>
+                  <div className="text-sm text-gray-600">States with Policies</div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {jurisdictionsWithRuleCounts.filter((j) => j.ruleCount > 0).length}
+                    {jurisdictionsWithPolicyCounts.filter((j) => j.policyCount > 0).length}
                   </div>
                 </Card>
               </>
@@ -322,7 +322,7 @@ export default function JurisdictionsPage() {
             <>
               <div className="relative bg-gray-50 rounded-lg border border-gray-200 overflow-hidden" style={{ height: "600px" }}>
                 <JurisdictionMap
-                  jurisdictions={jurisdictionsWithRuleCounts}
+                  jurisdictions={jurisdictionsWithPolicyCounts}
                   selectedJurisdiction={selectedJurisdiction}
                   onJurisdictionSelect={setSelectedJurisdiction}
                 />

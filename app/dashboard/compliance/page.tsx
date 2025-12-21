@@ -14,29 +14,27 @@ import {
   Clock,
   ArrowRight,
   Database,
-  ClipboardList
+  ClipboardList,
+  Shield
 } from "lucide-react";
 
 export default function CompliancePage() {
   const router = useRouter();
   const jurisdictions = useQuery(api.compliance.getJurisdictions, { type: "state" });
-  const allRules = useQuery(api.compliance.searchRules, {});
+  const allPolicies = useQuery(api.policies.searchPolicies, {});
   const seedStates = useMutation(api.compliance.seedUSStates);
-  const seedRules = useMutation(api.compliance.seedSampleRules);
 
   const stats = {
     totalJurisdictions: jurisdictions?.length || 0,
-    totalRules: allRules?.length || 0,
-    publishedRules: allRules?.filter(r => r.status === "published").length || 0,
-    draftRules: allRules?.filter(r => r.status === "draft").length || 0,
-    inReviewRules: allRules?.filter(r => r.status === "in_review").length || 0,
+    totalPolicies: allPolicies?.length || 0,
+    publishedPolicies: allPolicies?.filter(p => p.status === "published").length || 0,
+    draftPolicies: allPolicies?.filter(p => p.status === "draft").length || 0,
   };
 
   const handleSeedData = async () => {
     try {
       await seedStates({});
-      await seedRules({});
-      alert("Sample data seeded successfully!");
+      alert("US States seeded successfully!");
     } catch (error) {
       console.error("Error seeding data:", error);
       alert("Error seeding data. Check console for details.");
@@ -52,7 +50,7 @@ export default function CompliancePage() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Compliance Studio</h1>
               <p className="text-gray-600 mt-1">
-                Manage transportation rules and regulations across jurisdictions
+                Manage transportation compliance policies across jurisdictions
               </p>
             </div>
             <div className="flex gap-3">
@@ -62,15 +60,15 @@ export default function CompliancePage() {
                   onClick={handleSeedData}
                   className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
                 >
-                  Seed Sample Data
+                  Seed US States
                 </Button>
               )}
               <Button
-                onClick={() => router.push("/dashboard/compliance/rules/new")}
+                onClick={() => router.push("/dashboard/compliance/policies/new")}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Create Rule
+                Create Policy
               </Button>
             </div>
           </div>
@@ -94,19 +92,19 @@ export default function CompliancePage() {
                   <CheckCircle className="h-6 w-6 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Published Rules</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.publishedRules}</p>
+                  <p className="text-sm text-gray-600">Published Policies</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.publishedPolicies}</p>
                 </div>
               </div>
             </Card>
             <Card className="p-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-yellow-100 rounded-lg">
-                  <Clock className="h-6 w-6 text-yellow-600" />
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <Shield className="h-6 w-6 text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">In Review</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.inReviewRules}</p>
+                  <p className="text-sm text-gray-600">Total Policies</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.totalPolicies}</p>
                 </div>
               </div>
             </Card>
@@ -116,8 +114,8 @@ export default function CompliancePage() {
                   <FileText className="h-6 w-6 text-gray-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Draft Rules</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.draftRules}</p>
+                  <p className="text-sm text-gray-600">Draft Policies</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.draftPolicies}</p>
                 </div>
               </div>
             </Card>
@@ -127,22 +125,22 @@ export default function CompliancePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <Card 
               className="p-6 cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => router.push("/dashboard/compliance/rules")}
+              onClick={() => router.push("/dashboard/compliance/policies")}
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Rules Management</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Policy Management</h3>
                   <p className="text-gray-600 mb-4">
-                    Create, edit, and publish compliance rules for heavy haul transportation. 
-                    Define dimension limits, escort requirements, time restrictions, and more.
+                    Create, edit, and publish compliance policies for heavy haul transportation. 
+                    Define escort requirements, permits, speed limits, and more.
                   </p>
                   <div className="flex items-center text-blue-600 font-medium">
-                    View All Rules
+                    View All Policies
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </div>
                 </div>
                 <div className="p-3 bg-blue-100 rounded-lg">
-                  <FileText className="h-8 w-8 text-blue-600" />
+                  <Shield className="h-8 w-8 text-blue-600" />
                 </div>
               </div>
             </Card>
@@ -156,7 +154,7 @@ export default function CompliancePage() {
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">Jurisdictions</h3>
                   <p className="text-gray-600 mb-4">
                     View and manage jurisdictions including states, counties, and cities. 
-                    Each jurisdiction can have its own set of compliance rules.
+                    Each jurisdiction can have its own set of compliance policies.
                   </p>
                   <div className="flex items-center text-blue-600 font-medium">
                     View Jurisdictions
@@ -215,16 +213,15 @@ export default function CompliancePage() {
           </div>
 
           {/* Recent Activity / Info */}
-          {stats.totalRules === 0 && (
+          {stats.totalPolicies === 0 && (
             <Card className="mt-6 p-6 bg-yellow-50 border-yellow-200">
               <div className="flex items-start gap-4">
                 <AlertTriangle className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-semibold text-yellow-800">Getting Started</h4>
                   <p className="text-yellow-700 mt-1">
-                    No compliance rules have been created yet. Click "Seed Sample Data" above to 
-                    populate US states and sample rules for Illinois and Pennsylvania, or create 
-                    your first rule manually.
+                    No compliance policies have been created yet. Click "Seed US States" above to 
+                    populate US states, then create your first policy to get started.
                   </p>
                 </div>
               </div>

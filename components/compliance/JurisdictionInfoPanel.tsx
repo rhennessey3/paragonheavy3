@@ -7,7 +7,6 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { 
   X, 
   FileText, 
@@ -17,47 +16,43 @@ import {
   AlertTriangle, 
   Route,
   Gauge,
-  ChevronRight
+  ChevronRight,
+  Zap,
+  Ruler
 } from "lucide-react";
 
 import { JurisdictionData } from "./JurisdictionMap";
-import { AddRulePanel } from "./AddRulePanel";
-import { RuleDetailPanel } from "./RuleDetailPanel";
-import { EditRulePanel } from "./EditRulePanel";
 
 interface JurisdictionInfoPanelProps {
   jurisdiction: JurisdictionData;
   onClose: () => void;
 }
 
-const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  dimension_limit: { label: "Dimension Limit", icon: Scale, color: "bg-purple-100 text-purple-700" },
-  escort_requirement: { label: "Escort Required", icon: Car, color: "bg-orange-100 text-orange-700" },
-  time_restriction: { label: "Time Restriction", icon: Clock, color: "bg-yellow-100 text-yellow-700" },
-  permit_requirement: { label: "Permit Required", icon: FileText, color: "bg-blue-100 text-blue-700" },
-  speed_limit: { label: "Speed Limit", icon: Gauge, color: "bg-red-100 text-red-700" },
-  route_restriction: { label: "Route Restriction", icon: Route, color: "bg-green-100 text-green-700" },
+const POLICY_TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  escort: { label: "Escort Policy", icon: Car, color: "bg-orange-100 text-orange-700" },
+  permit: { label: "Permit Policy", icon: FileText, color: "bg-blue-100 text-blue-700" },
+  speed: { label: "Speed Policy", icon: Gauge, color: "bg-red-100 text-red-700" },
+  hours: { label: "Hours Policy", icon: Clock, color: "bg-yellow-100 text-yellow-700" },
+  route: { label: "Route Policy", icon: Route, color: "bg-green-100 text-green-700" },
+  utility: { label: "Utility Policy", icon: Zap, color: "bg-cyan-100 text-cyan-700" },
+  dimension: { label: "Dimension Policy", icon: Ruler, color: "bg-purple-100 text-purple-700" },
 };
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
-  in_review: "bg-yellow-100 text-yellow-700",
   published: "bg-green-100 text-green-700",
   archived: "bg-red-100 text-red-700",
 };
 
 export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInfoPanelProps) {
   const router = useRouter();
-  const [showAddRule, setShowAddRule] = useState(false);
-  const [selectedRuleId, setSelectedRuleId] = useState<Id<"complianceRules"> | null>(null);
-  const [editingRuleId, setEditingRuleId] = useState<Id<"complianceRules"> | null>(null);
   
-  const rules = useQuery(api.compliance.getRulesForJurisdiction, {
+  const policies = useQuery(api.policies.getPoliciesForJurisdiction, {
     jurisdictionId: jurisdiction._id,
   });
 
-  const categoryCounts = rules?.reduce((acc, rule) => {
-    acc[rule.category] = (acc[rule.category] || 0) + 1;
+  const typeCounts = policies?.reduce((acc, policy) => {
+    acc[policy.policyType] = (acc[policy.policyType] || 0) + 1;
     return acc;
   }, {} as Record<string, number>) || {};
 
@@ -88,17 +83,17 @@ export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInf
         <div className="flex gap-6">
           {/* Left - Stats and Actions */}
           <div className="w-64 flex-shrink-0 space-y-4">
-            {Object.keys(categoryCounts).length > 0 && (
+            {Object.keys(typeCounts).length > 0 && (
               <div>
-                <div className="text-xs font-medium text-gray-500 mb-2">Rules by Category</div>
+                <div className="text-xs font-medium text-gray-500 mb-2">Policies by Type</div>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(categoryCounts).map(([category, count]) => {
-                    const config = CATEGORY_CONFIG[category];
+                  {Object.entries(typeCounts).map(([policyType, count]) => {
+                    const config = POLICY_TYPE_CONFIG[policyType];
                     if (!config) return null;
                     const Icon = config.icon;
                     return (
                       <div
-                        key={category}
+                        key={policyType}
                         className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${config.color}`}
                       >
                         <Icon className="h-3 w-3" />
@@ -115,59 +110,52 @@ export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInf
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => router.push(`/dashboard/compliance/rules?jurisdiction=${jurisdiction.name}`)}
+                onClick={() => router.push(`/dashboard/compliance/policies?jurisdiction=${jurisdiction._id}`)}
               >
-                View All Rules
+                View All Policies
               </Button>
               <Button
                 size="sm"
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                onClick={() => setShowAddRule(true)}
+                onClick={() => router.push(`/dashboard/compliance/policies/new?jurisdiction=${jurisdiction._id}`)}
               >
-                Add Rule
+                Add Policy
               </Button>
             </div>
-
-            {showAddRule && (
-              <AddRulePanel
-                jurisdiction={jurisdiction}
-                onClose={() => setShowAddRule(false)}
-              />
-            )}
           </div>
 
-          {/* Right - Rules list */}
+          {/* Right - Policies list */}
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-gray-500 mb-3">Compliance Rules</div>
+            <div className="text-xs font-medium text-gray-500 mb-3">Compliance Policies</div>
             
-            {!rules ? (
+            {!policies ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto" />
-                <p className="text-sm text-gray-500 mt-2">Loading rules...</p>
+                <p className="text-sm text-gray-500 mt-2">Loading policies...</p>
               </div>
-            ) : rules.length === 0 ? (
+            ) : policies.length === 0 ? (
               <div className="text-center py-8 bg-gray-50 rounded-lg">
                 <AlertTriangle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No rules defined for this jurisdiction</p>
+                <p className="text-sm text-gray-500">No policies defined for this jurisdiction</p>
                 <Button
                   variant="outline"
                   size="sm"
                   className="mt-3"
-                  onClick={() => setShowAddRule(true)}
+                  onClick={() => router.push(`/dashboard/compliance/policies/new?jurisdiction=${jurisdiction._id}`)}
                 >
-                  Add First Rule
+                  Add First Policy
                 </Button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto">
-                {rules.map((rule) => {
-                  const config = CATEGORY_CONFIG[rule.category];
+                {policies.map((policy) => {
+                  const config = POLICY_TYPE_CONFIG[policy.policyType];
                   const Icon = config?.icon || FileText;
                   
                   return (
                     <button
-                      key={rule._id}
-                      onClick={() => setSelectedRuleId(rule._id)}
+                      key={policy._id}
+                      onClick={() => router.push(`/dashboard/compliance/policies/${policy._id}`)}
                       className="text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -175,13 +163,16 @@ export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInf
                           <div className="flex items-center gap-2 mb-1">
                             <Icon className="h-4 w-4 text-gray-400 flex-shrink-0" />
                             <span className="text-sm font-medium text-gray-900 truncate">
-                              {rule.title}
+                              {policy.name}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500 line-clamp-2">{rule.summary}</p>
+                          <p className="text-xs text-gray-500 line-clamp-2">{policy.description || "No description"}</p>
                           <div className="flex items-center gap-2 mt-2">
-                            <Badge className={`text-xs ${STATUS_COLORS[rule.status]}`}>
-                              {rule.status.replace("_", " ")}
+                            <Badge className={`text-xs ${STATUS_COLORS[policy.status]}`}>
+                              {policy.status}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {policy.conditions.length} condition{policy.conditions.length !== 1 ? 's' : ''}
                             </Badge>
                           </div>
                         </div>
@@ -195,26 +186,6 @@ export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInf
           </div>
         </div>
       </div>
-
-      {/* Rule Detail Panel */}
-      {selectedRuleId && !editingRuleId && (
-        <RuleDetailPanel
-          ruleId={selectedRuleId}
-          onClose={() => setSelectedRuleId(null)}
-          onEdit={() => {
-            setEditingRuleId(selectedRuleId);
-            setSelectedRuleId(null);
-          }}
-        />
-      )}
-
-      {/* Edit Rule Panel */}
-      {editingRuleId && (
-        <EditRulePanel
-          ruleId={editingRuleId}
-          onClose={() => setEditingRuleId(null)}
-        />
-      )}
     </div>
   );
 }

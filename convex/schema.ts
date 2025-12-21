@@ -200,89 +200,7 @@ export default defineSchema({
   })
     .index("by_jurisdiction", ["jurisdictionId"]),
 
-  // Compliance Rules
-  complianceRules: defineTable({
-    jurisdictionId: v.id("jurisdictions"),
-    status: v.union(
-      v.literal("draft"),
-      v.literal("in_review"),
-      v.literal("published"),
-      v.literal("archived")
-    ),
-    category: v.union(
-      v.literal("dimension_limit"),
-      v.literal("escort_requirement"),
-      v.literal("time_restriction"),
-      v.literal("permit_requirement"),
-      v.literal("speed_limit"),
-      v.literal("route_restriction"),
-      v.literal("utility_notice")
-    ),
-    title: v.string(),
-    summary: v.string(),
-    source: v.optional(v.string()), // URL or statute reference
-    effectiveFrom: v.optional(v.number()),
-    effectiveTo: v.optional(v.number()),
-    geometryScopeType: v.union(
-      v.literal("whole_jurisdiction"),
-      v.literal("segment_based"),
-      v.literal("point_based")
-    ),
-    geometry: v.optional(v.any()), // GeoJSON for corridor/point rules
-    conditions: v.any(), // JSON: RuleCondition type
-    priority: v.optional(v.number()), // For conflict resolution - higher priority wins
-    createdBy: v.string(),
-    updatedBy: v.string(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_jurisdiction", ["jurisdictionId"])
-    .index("by_status", ["status"])
-    .index("by_category", ["category"])
-    .index("by_jurisdiction_status", ["jurisdictionId", "status"]),
-
-  // Conflict Resolutions - tracks how rule conflicts have been resolved
-  conflictResolutions: defineTable({
-    jurisdictionId: v.id("jurisdictions"),
-    // The two rules involved in the conflict
-    ruleA: v.id("complianceRules"),
-    ruleB: v.id("complianceRules"),
-    // Type of conflict
-    conflictType: v.union(
-      v.literal("category_overlap"),
-      v.literal("condition_overlap"),
-      v.literal("requirement_contradiction")
-    ),
-    // Resolution decision
-    resolution: v.union(
-      v.literal("rule_a_wins"),     // Rule A takes precedence
-      v.literal("rule_b_wins"),     // Rule B takes precedence
-      v.literal("cumulative"),      // Both rules apply (merge requirements)
-      v.literal("unresolved")       // No decision made yet
-    ),
-    // For cumulative resolutions, the merged requirement
-    mergedRequirement: v.optional(v.any()),
-    // Resolution strategy used
-    strategy: v.optional(v.union(
-      v.literal("priority"),        // Higher priority wins
-      v.literal("specificity"),     // More specific wins
-      v.literal("cumulative"),      // Combine requirements
-      v.literal("manual")           // Manual decision
-    )),
-    // Audit trail
-    resolvedBy: v.optional(v.string()),  // Clerk user ID
-    resolvedAt: v.optional(v.number()),  // Timestamp
-    notes: v.optional(v.string()),        // Explanation for manual decisions
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_jurisdiction", ["jurisdictionId"])
-    .index("by_rule_a", ["ruleA"])
-    .index("by_rule_b", ["ruleB"])
-    .index("by_rules", ["ruleA", "ruleB"])
-    .index("by_resolution", ["resolution"]),
-
-  // Jurisdiction Editors (who can manage rules for which jurisdictions)
+  // Jurisdiction Editors (who can manage policies for which jurisdictions)
   jurisdictionEditors: defineTable({
     jurisdictionId: v.id("jurisdictions"),
     orgId: v.id("organizations"),
@@ -442,4 +360,115 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_name", ["orgId", "name"]),
+
+  // ==========================================================================
+  // POLICY-CENTRIC COMPLIANCE MODEL
+  // ==========================================================================
+
+  // Facet merge policies - how values combine per jurisdiction per facet
+  facetMergePolicies: defineTable({
+    jurisdictionId: v.id("jurisdictions"),
+    facet: v.string(), // "escort", "permit", "speed", "hours", "utility_notice"
+    field: v.string(), // "rear_escorts", "front_escorts", "permit_types", "max_speed"
+    mergeStrategy: v.union(
+      v.literal("MAX"),    // Take highest (escorts)
+      v.literal("MIN"),    // Take lowest (speed)
+      v.literal("UNION"),  // Combine all (permit types)
+      v.literal("FIRST"),  // First applicable
+      v.literal("LAST"),   // Last applicable
+      v.literal("INTERSECTION"), // Common to all (time windows)
+      v.literal("OR")      // Boolean OR (height pole required)
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jurisdiction", ["jurisdictionId"])
+    .index("by_jurisdiction_facet", ["jurisdictionId", "facet"])
+    .index("by_jurisdiction_facet_field", ["jurisdictionId", "facet", "field"]),
+  // Policies are the central organizing unit. Conditions flow INTO policies,
+  // and policies define outputs with merge strategies.
+
+  compliancePolicies: defineTable({
+    jurisdictionId: v.id("jurisdictions"),
+    
+    // Policy type determines what kind of output this policy produces
+    policyType: v.union(
+      v.literal("escort"),
+      v.literal("permit"),
+      v.literal("speed"),
+      v.literal("hours"),
+      v.literal("route"),
+      v.literal("utility"),
+      v.literal("dimension")
+    ),
+    
+    name: v.string(),  // "PA Escort Policy", "PA Permit Requirements"
+    description: v.optional(v.string()),
+    
+    status: v.union(
+      v.literal("draft"),
+      v.literal("published"),
+      v.literal("archived")
+    ),
+    
+    // Conditions that trigger this policy (the IF clauses)
+    // Each condition can have its own output contribution
+    conditions: v.array(v.object({
+      id: v.string(),                           // Unique ID for React keys
+      attribute: v.string(),                    // "width_ft", "length_ft", etc.
+      operator: v.string(),                     // ">", ">=", "<", "<=", "=", "between"
+      value: v.any(),                           // number, string, boolean, or [min, max]
+      sourceRegulation: v.optional(v.string()), // "PA DOT 67.1.2" - regulatory reference
+      notes: v.optional(v.string()),            // Additional context
+      priority: v.optional(v.number()),         // For ordering/precedence
+      // The output this specific condition contributes
+      output: v.optional(v.any()),              // Partial output when this condition matches
+    })),
+    
+    // Default/base output for the policy (applied when any condition matches)
+    baseOutput: v.optional(v.any()),
+    
+    // Merge strategies for combining outputs from multiple matching conditions
+    mergeStrategies: v.optional(v.object({
+      // Each field in the output can have its own merge strategy
+      // e.g., { front_escorts: "MAX", rear_escorts: "MAX", height_pole: "OR" }
+    })),
+    
+    // Effective date range
+    effectiveFrom: v.optional(v.number()),
+    effectiveTo: v.optional(v.number()),
+    
+    // Metadata
+    createdBy: v.string(),
+    updatedBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jurisdiction", ["jurisdictionId"])
+    .index("by_jurisdiction_type", ["jurisdictionId", "policyType"])
+    .index("by_status", ["status"])
+    .index("by_type", ["policyType"]),
+
+  // Policy relationships - how policies interact with each other
+  policyRelationships: defineTable({
+    jurisdictionId: v.id("jurisdictions"),
+    sourcePolicyId: v.id("compliancePolicies"),
+    targetPolicyId: v.id("compliancePolicies"),
+    relationshipType: v.union(
+      v.literal("requires"),           // Source policy requires target policy
+      v.literal("exempts_from"),       // Source policy exempts from target policy
+      v.literal("modifies"),           // Source policy modifies target policy output
+      v.literal("conflicts_with")      // Policies cannot both apply
+    ),
+    // For "modifies" type, what modification to apply
+    modification: v.optional(v.any()),
+    notes: v.optional(v.string()),
+    createdBy: v.string(),
+    updatedBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jurisdiction", ["jurisdictionId"])
+    .index("by_source", ["sourcePolicyId"])
+    .index("by_target", ["targetPolicyId"]),
 });

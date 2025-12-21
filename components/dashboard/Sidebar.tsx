@@ -90,7 +90,7 @@ export function Sidebar() {
       label: "Compliance Studio", 
       icon: Shield,
       children: [
-        { href: "/dashboard/compliance/rules", label: "Rules Management" },
+        { href: "/dashboard/compliance/policies", label: "Policies" },
         { href: "/dashboard/compliance/jurisdictions", label: "Jurisdictions" },
         { href: "/dashboard/compliance/fields", label: "System Fields" },
         { href: "/dashboard/compliance/permit-types", label: "Permit Types" },

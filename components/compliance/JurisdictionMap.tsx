@@ -11,7 +11,7 @@ export interface JurisdictionData {
   abbreviation?: string;
   fipsCode?: string;
   type?: string;
-  ruleCount: number;
+  policyCount: number;
 }
 
 interface JurisdictionMapProps {
@@ -93,7 +93,7 @@ export function JurisdictionMap({
     return jurisdictions.find(j => j.abbreviation === abbr);
   }, [jurisdictions]);
 
-  const getColorForRuleCount = useCallback((count: number) => {
+  const getColorForPolicyCount = useCallback((count: number) => {
     if (count === 0) return "#e5e7eb"; // gray-200
     if (count <= 2) return "#bfdbfe"; // blue-200
     if (count <= 5) return "#60a5fa"; // blue-400
@@ -300,14 +300,14 @@ export function JurisdictionMap({
 
     jurisdictions.forEach((j) => {
       if (j.name) {
-        colorExpression.push(j.name, getColorForRuleCount(j.ruleCount));
+        colorExpression.push(j.name, getColorForPolicyCount(j.policyCount));
       }
     });
 
     colorExpression.push("#e5e7eb"); // default color
 
     map.current.setPaintProperty("states-fill", "fill-color", colorExpression);
-  }, [jurisdictions, mapLoaded, getColorForRuleCount]);
+  }, [jurisdictions, mapLoaded, getColorForPolicyCount]);
 
   // Update selected state highlight and show county boundaries
   useEffect(() => {
@@ -446,7 +446,7 @@ export function JurisdictionMap({
                 <div class="px-2 py-1">
                   <div class="font-semibold">${jurisdiction.name}</div>
                   <div class="text-sm text-gray-600">
-                    ${jurisdiction.ruleCount} ${jurisdiction.ruleCount === 1 ? "rule" : "rules"}
+                    ${jurisdiction.policyCount} ${jurisdiction.policyCount === 1 ? "policy" : "policies"}
                   </div>
                 </div>
               `)
@@ -457,7 +457,7 @@ export function JurisdictionMap({
               .setHTML(`
                 <div class="px-2 py-1">
                   <div class="font-semibold">${stateName}</div>
-                  <div class="text-sm text-gray-600">0 rules</div>
+                  <div class="text-sm text-gray-600">0 policies</div>
                 </div>
               `)
               .addTo(map.current);
@@ -538,7 +538,7 @@ export function JurisdictionMap({
       
       {/* Legend */}
       <div className="absolute bottom-4 left-4 bg-white px-4 py-3 rounded-lg shadow-lg">
-        <div className="text-xs font-medium text-gray-700 mb-2">Rules by State</div>
+        <div className="text-xs font-medium text-gray-700 mb-2">Policies by State</div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1">
             <div className="w-4 h-4 rounded" style={{ backgroundColor: "#e5e7eb" }} />

@@ -288,33 +288,8 @@ export function getOperatorsForAttribute(attribute: RuleAttribute) {
 }
 
 // =============================================================================
-// Legacy Rule Condition Types (keeping for backward compatibility)
+// Load Parameters (for compliance evaluation)
 // =============================================================================
-
-// Rule condition structure for machine-readable compliance logic
-export type RuleCondition = {
-  vehicleClasses?: string[];
-  minWidthFt?: number;
-  maxWidthFt?: number;
-  minHeightFt?: number;
-  maxHeightFt?: number;
-  minLengthFt?: number;
-  maxLengthFt?: number;
-  maxGrossWeightLbs?: number;
-  maxAxleWeightLbs?: number;
-  escortsRequired?: {
-    front?: boolean;
-    rear?: boolean;
-    heightPole?: boolean;
-    numberOfEscorts?: number;
-  };
-  timeOfDay?: {
-    allowed?: string[];
-    forbidden?: string[];
-  };
-  permitType?: "single_trip" | "annual" | "superload";
-  notes?: string;
-};
 
 // Load parameters for compliance checking
 export type LoadParams = {
@@ -326,78 +301,8 @@ export type LoadParams = {
   vehicleClass?: string;
 };
 
-// Rule categories
-export const RULE_CATEGORIES = [
-  { value: "dimension_limit", label: "Dimension Limit" },
-  { value: "escort_requirement", label: "Escort Requirement" },
-  { value: "time_restriction", label: "Time Restriction" },
-  { value: "permit_requirement", label: "Permit Requirement" },
-  { value: "speed_limit", label: "Speed Limit" },
-  { value: "route_restriction", label: "Route Restriction" },
-  { value: "utility_notice", label: "Utility Notice" },
-] as const;
-
-export type RuleCategory = typeof RULE_CATEGORIES[number]["value"];
-
-// Rule statuses
-export const RULE_STATUSES = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-800" },
-  { value: "in_review", label: "In Review", color: "bg-yellow-100 text-yellow-800" },
-  { value: "published", label: "Published", color: "bg-green-100 text-green-800" },
-  { value: "archived", label: "Archived", color: "bg-red-100 text-red-800" },
-] as const;
-
-export type RuleStatus = typeof RULE_STATUSES[number]["value"];
-
 // Severity levels for compliance results
-export type RuleSeverity = "info" | "requires_permit" | "restriction" | "prohibited";
-
-// Compliance segment for route analysis
-export type ComplianceSegment = {
-  segmentId: string;
-  fromMile: number;
-  toMile: number;
-  jurisdictions: string[];
-  rules: {
-    id: string;
-    category: RuleCategory;
-    title: string;
-    severity: RuleSeverity;
-    summary: string;
-    conditions: RuleCondition;
-  }[];
-};
-
-// Full compliance response for a route
-export type ComplianceResponse = {
-  routeId: string;
-  aggregatedSummary: {
-    totalJurisdictions: number;
-    totalRules: number;
-    escortRequired: boolean;
-    escortDetails?: string;
-    curfewsDetected: boolean;
-    permitsRequired: string[];
-    // Conflict summary
-    hasConflicts?: boolean;
-    totalConflicts?: number;
-  };
-  segments: ComplianceSegment[];
-  jurisdictionRules: {
-    jurisdictionId: string;
-    jurisdictionName: string;
-    rules: {
-      id: string;
-      category: RuleCategory;
-      title: string;
-      severity: RuleSeverity;
-      summary: string;
-      conditions: RuleCondition;
-    }[];
-  }[];
-  // Conflict analysis results
-  conflicts?: ConflictAnalysis;
-};
+export type PolicySeverity = "info" | "requires_permit" | "restriction" | "prohibited";
 
 // US States data for seeding
 export const US_STATES = [
@@ -453,101 +358,6 @@ export const US_STATES = [
   { name: "Wyoming", abbreviation: "WY", fipsCode: "56" },
   { name: "District of Columbia", abbreviation: "DC", fipsCode: "11" },
 ] as const;
-
-// Check if a load triggers a rule based on conditions
-export function evaluateRuleConditions(
-  conditions: RuleCondition,
-  load: LoadParams
-): { triggered: boolean; reasons: string[] } {
-  const reasons: string[] = [];
-
-  // Check width limits
-  if (conditions.maxWidthFt && load.widthFt > conditions.maxWidthFt) {
-    reasons.push(`Width ${load.widthFt}' exceeds max ${conditions.maxWidthFt}'`);
-  }
-  if (conditions.minWidthFt && load.widthFt >= conditions.minWidthFt) {
-    reasons.push(`Width ${load.widthFt}' meets/exceeds threshold ${conditions.minWidthFt}'`);
-  }
-
-  // Check height limits
-  if (conditions.maxHeightFt && load.heightFt > conditions.maxHeightFt) {
-    reasons.push(`Height ${load.heightFt}' exceeds max ${conditions.maxHeightFt}'`);
-  }
-  if (conditions.minHeightFt && load.heightFt >= conditions.minHeightFt) {
-    reasons.push(`Height ${load.heightFt}' meets/exceeds threshold ${conditions.minHeightFt}'`);
-  }
-
-  // Check length limits
-  if (conditions.maxLengthFt && load.lengthFt > conditions.maxLengthFt) {
-    reasons.push(`Length ${load.lengthFt}' exceeds max ${conditions.maxLengthFt}'`);
-  }
-  if (conditions.minLengthFt && load.lengthFt >= conditions.minLengthFt) {
-    reasons.push(`Length ${load.lengthFt}' meets/exceeds threshold ${conditions.minLengthFt}'`);
-  }
-
-  // Check weight limits
-  if (conditions.maxGrossWeightLbs && load.grossWeightLbs > conditions.maxGrossWeightLbs) {
-    reasons.push(`Weight ${load.grossWeightLbs.toLocaleString()} lbs exceeds max ${conditions.maxGrossWeightLbs.toLocaleString()} lbs`);
-  }
-
-  // Check vehicle class
-  if (conditions.vehicleClasses && load.vehicleClass) {
-    if (conditions.vehicleClasses.includes(load.vehicleClass)) {
-      reasons.push(`Vehicle class "${load.vehicleClass}" matches rule`);
-    }
-  }
-
-  return {
-    triggered: reasons.length > 0,
-    reasons,
-  };
-}
-
-// Determine severity based on rule category and conditions
-export function determineSeverity(
-  category: RuleCategory,
-  conditions: RuleCondition
-): RuleSeverity {
-  if (category === "route_restriction") {
-    return "prohibited";
-  }
-  if (category === "permit_requirement") {
-    return "requires_permit";
-  }
-  if (category === "escort_requirement" || category === "time_restriction") {
-    return "restriction";
-  }
-  return "info";
-}
-
-// Format escort requirements for display
-export function formatEscortRequirements(escorts?: RuleCondition["escortsRequired"]): string {
-  if (!escorts) return "None";
-  
-  const parts: string[] = [];
-  if (escorts.front) parts.push("Front");
-  if (escorts.rear) parts.push("Rear");
-  if (escorts.heightPole) parts.push("Height Pole");
-  
-  if (parts.length === 0) return "None";
-  
-  let result = parts.join(", ");
-  if (escorts.numberOfEscorts && escorts.numberOfEscorts > 1) {
-    result += ` (${escorts.numberOfEscorts} total)`;
-  }
-  
-  return result;
-}
-
-// Get category display info
-export function getCategoryInfo(category: RuleCategory) {
-  return RULE_CATEGORIES.find(c => c.value === category) || { value: category, label: category };
-}
-
-// Get status display info
-export function getStatusInfo(status: RuleStatus) {
-  return RULE_STATUSES.find(s => s.value === status) || { value: status, label: status, color: "bg-gray-100 text-gray-800" };
-}
 
 // Format utility notice requirements for display
 export function formatUtilityNoticeRequirements(notice: UtilityNoticeRequirement): string {
@@ -630,49 +440,423 @@ export function formatPermitRequirements(permit: PermitRequirement): string {
 }
 
 // =============================================================================
-// Conflict Detection Types
+// Facet-Based Resolution System
 // =============================================================================
 
-// Types of conflicts that can occur between rules
+/**
+ * Facets are policy domains.
+ * Policies don't conflict with each other directly - they feed into facets
+ * where merge policies determine how to combine multiple policy outputs.
+ */
+export const FACETS = [
+  { key: 'escort', label: 'Escort Policy' },
+  { key: 'permit', label: 'Permit Policy' },
+  { key: 'speed', label: 'Speed Policy' },
+  { key: 'hours', label: 'Hours Policy' },
+  { key: 'route', label: 'Route Policy' },
+  { key: 'utility', label: 'Utility Policy' },
+  { key: 'dimension', label: 'Dimension Policy' },
+] as const;
+
+export type FacetKey = typeof FACETS[number]['key'];
+
+/**
+ * Default merge policies for each facet.
+ * These define how multiple rule outputs are combined within a facet.
+ */
+export const DEFAULT_MERGE_POLICIES: Record<string, Record<string, string>> = {
+  escort: { 
+    rear_escorts: 'MAX', 
+    front_escorts: 'MAX', 
+    height_pole: 'OR',
+    front_distance_min_ft: 'MIN',
+    front_distance_max_ft: 'MAX',
+    rear_distance_min_ft: 'MIN',
+    rear_distance_max_ft: 'MAX',
+  },
+  permit: { 
+    types: 'UNION',
+    estimated_cost: 'MAX',
+    processing_days: 'MAX',
+  },
+  speed: { 
+    max: 'MIN',
+    min: 'MAX',
+  },
+  hours: { 
+    windows: 'INTERSECTION',
+    blackout_periods: 'UNION',
+  },
+  utility: { 
+    notice_hours: 'MAX', 
+    types: 'UNION',
+  },
+  route: {
+    restrictions: 'UNION',
+  },
+  dimension: {
+    max_width: 'MIN',
+    max_height: 'MIN',
+    max_length: 'MIN',
+    max_weight: 'MIN',
+  },
+};
+
+/**
+ * Get facet configuration by key
+ */
+export function getFacetConfig(key: FacetKey) {
+  return FACETS.find(f => f.key === key);
+}
+
+/**
+ * Merge strategies for facet fields
+ */
+export const MERGE_STRATEGIES = [
+  { value: 'MAX', label: 'Maximum', description: 'Take the highest value (e.g., most escorts)' },
+  { value: 'MIN', label: 'Minimum', description: 'Take the lowest value (e.g., strictest speed limit)' },
+  { value: 'UNION', label: 'Union', description: 'Combine all values (e.g., all permit types needed)' },
+  { value: 'INTERSECTION', label: 'Intersection', description: 'Common to all (e.g., allowed time windows)' },
+  { value: 'FIRST', label: 'First', description: 'Use the first applicable rule\'s value' },
+  { value: 'LAST', label: 'Last', description: 'Use the last applicable rule\'s value' },
+  { value: 'OR', label: 'Boolean OR', description: 'True if any rule requires it' },
+] as const;
+
+export type MergeStrategy = typeof MERGE_STRATEGIES[number]['value'];
+
+// =============================================================================
+// Policy-Centric Model Types
+// =============================================================================
+
+/**
+ * Policy types define what kind of output a policy produces.
+ * These align with facets but are the organizing principle in the policy-centric model.
+ */
+export const POLICY_TYPES = [
+  { 
+    key: 'escort', 
+    label: 'Escort Policy', 
+    description: 'Defines escort vehicle requirements',
+    icon: 'car',
+    color: 'blue',
+  },
+  { 
+    key: 'permit', 
+    label: 'Permit Policy', 
+    description: 'Defines permit requirements and types',
+    icon: 'file-text',
+    color: 'green',
+  },
+  { 
+    key: 'speed', 
+    label: 'Speed Policy', 
+    description: 'Defines speed restrictions',
+    icon: 'gauge',
+    color: 'red',
+  },
+  { 
+    key: 'hours', 
+    label: 'Hours Policy', 
+    description: 'Defines time-of-day travel restrictions',
+    icon: 'clock',
+    color: 'amber',
+  },
+  { 
+    key: 'route', 
+    label: 'Route Policy', 
+    description: 'Defines route restrictions and requirements',
+    icon: 'map-pin',
+    color: 'orange',
+  },
+  { 
+    key: 'utility', 
+    label: 'Utility Policy', 
+    description: 'Defines utility notification requirements',
+    icon: 'zap',
+    color: 'cyan',
+  },
+  { 
+    key: 'dimension', 
+    label: 'Dimension Policy', 
+    description: 'Defines dimension limits',
+    icon: 'ruler',
+    color: 'purple',
+  },
+] as const;
+
+export type PolicyType = typeof POLICY_TYPES[number]['key'];
+
+/**
+ * A condition within a policy that triggers output when matched.
+ * Conditions are the "IF" part of the policy logic.
+ */
+export interface PolicyCondition {
+  id: string;                           // Unique ID for React keys
+  attribute: RuleAttribute;             // What to evaluate (width_ft, etc.)
+  operator: ConditionOperator;          // How to compare (>, >=, etc.)
+  value: number | string | boolean | [number, number] | string[];
+  sourceRegulation?: string;            // Regulatory reference (e.g., "PA DOT 67.1.2")
+  notes?: string;                       // Additional context
+  priority?: number;                    // For ordering/precedence within policy
+  // The output this specific condition contributes when matched
+  output?: Partial<EscortRequirement | PermitRequirement | UtilityNoticeRequirement | SpeedRequirement | HoursRequirement | RouteRequirement | DimensionRequirement>;
+}
+
+/**
+ * Speed restriction output
+ */
+export interface SpeedRequirement {
+  max_speed_mph?: number;
+  min_speed_mph?: number;
+  notes?: string;
+}
+
+/**
+ * Hours/time restriction output
+ */
+export interface HoursRequirement {
+  allowed_start_time?: string;  // "06:00"
+  allowed_end_time?: string;    // "18:00"
+  allowed_days?: string[];      // ["monday", "tuesday", ...]
+  blackout_periods?: Array<{
+    start: string;
+    end: string;
+    reason?: string;
+  }>;
+  notes?: string;
+}
+
+/**
+ * Route restriction output
+ */
+export interface RouteRequirement {
+  restricted_routes?: string[];
+  required_routes?: string[];
+  bridge_restrictions?: boolean;
+  tunnel_restrictions?: boolean;
+  notes?: string;
+}
+
+/**
+ * Dimension limit output
+ */
+export interface DimensionRequirement {
+  max_width_ft?: number;
+  max_height_ft?: number;
+  max_length_ft?: number;
+  max_weight_lbs?: number;
+  notes?: string;
+}
+
+/**
+ * Union type for all policy outputs
+ */
+export type PolicyOutput = 
+  | EscortRequirement 
+  | PermitRequirement 
+  | UtilityNoticeRequirement 
+  | SpeedRequirement 
+  | HoursRequirement 
+  | RouteRequirement 
+  | DimensionRequirement;
+
+/**
+ * The main Policy type - the central organizing unit in the policy-centric model.
+ * A policy contains conditions that flow INTO it, and produces an output.
+ */
+export interface CompliancePolicy {
+  _id: string;
+  jurisdictionId: string;
+  policyType: PolicyType;
+  name: string;
+  description?: string;
+  status: 'draft' | 'published' | 'archived';
+  
+  // Conditions that trigger this policy
+  conditions: PolicyCondition[];
+  
+  // Base output when any condition matches (conditions can add to this)
+  baseOutput?: PolicyOutput;
+  
+  // How to merge outputs from multiple matching conditions
+  mergeStrategies?: Record<string, MergeStrategy>;
+  
+  // Effective date range
+  effectiveFrom?: number;
+  effectiveTo?: number;
+  
+  // Metadata
+  createdBy: string;
+  updatedBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Policy relationship types - how policies interact with each other
+ */
+export const POLICY_RELATIONSHIP_TYPES = [
+  { 
+    value: 'requires', 
+    label: 'Requires', 
+    description: 'This policy requires the target policy to also apply' 
+  },
+  { 
+    value: 'exempts_from', 
+    label: 'Exempts From', 
+    description: 'This policy exempts from the target policy requirements' 
+  },
+  { 
+    value: 'modifies', 
+    label: 'Modifies', 
+    description: 'This policy modifies the target policy output' 
+  },
+  { 
+    value: 'conflicts_with', 
+    label: 'Conflicts With', 
+    description: 'These policies cannot both apply' 
+  },
+] as const;
+
+export type PolicyRelationshipType = typeof POLICY_RELATIONSHIP_TYPES[number]['value'];
+
+/**
+ * Relationship between two policies
+ */
+export interface PolicyRelationship {
+  _id: string;
+  jurisdictionId: string;
+  sourcePolicyId: string;
+  targetPolicyId: string;
+  relationshipType: PolicyRelationshipType;
+  modification?: Partial<PolicyOutput>;  // For "modifies" type
+  notes?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Get policy type configuration by key
+ */
+export function getPolicyTypeConfig(key: PolicyType) {
+  return POLICY_TYPES.find(p => p.key === key);
+}
+
+/**
+ * Get default merge strategies for a policy type
+ */
+export function getDefaultMergeStrategiesForPolicyType(type: PolicyType): Record<string, MergeStrategy> {
+  return DEFAULT_MERGE_POLICIES[type] || {};
+}
+
+/**
+ * Create an empty policy condition
+ */
+export function createEmptyPolicyCondition(): PolicyCondition {
+  return {
+    id: Math.random().toString(36).substring(2, 9),
+    attribute: 'width_ft',
+    operator: '>',
+    value: 0,
+  };
+}
+
+/**
+ * Create a default base output for a policy type
+ */
+export function createDefaultBaseOutput(type: PolicyType): PolicyOutput {
+  switch (type) {
+    case 'escort':
+      return { front_escorts: 0, rear_escorts: 0 };
+    case 'permit':
+      return { permit_type_key: '', permit_type_label: '' };
+    case 'utility':
+      return { notice_hours: 24, utility_types: [] };
+    case 'speed':
+      return { max_speed_mph: undefined, min_speed_mph: undefined };
+    case 'hours':
+      return { allowed_start_time: '06:00', allowed_end_time: '18:00' };
+    case 'route':
+      return { restricted_routes: [], required_routes: [] };
+    case 'dimension':
+      return { max_width_ft: undefined, max_height_ft: undefined, max_length_ft: undefined };
+    default:
+      return {};
+  }
+}
+
+/**
+ * Type guard for policy output types
+ */
+export function isPolicyOutputType<T extends PolicyOutput>(
+  output: PolicyOutput,
+  type: PolicyType
+): output is T {
+  switch (type) {
+    case 'escort':
+      return 'front_escorts' in output || 'rear_escorts' in output;
+    case 'permit':
+      return 'permit_type_key' in output;
+    case 'utility':
+      return 'notice_hours' in output;
+    case 'speed':
+      return 'max_speed_mph' in output || 'min_speed_mph' in output;
+    case 'hours':
+      return 'allowed_start_time' in output || 'blackout_periods' in output;
+    case 'route':
+      return 'restricted_routes' in output || 'required_routes' in output;
+    case 'dimension':
+      return 'max_width_ft' in output || 'max_height_ft' in output || 'max_length_ft' in output;
+    default:
+      return false;
+  }
+}
+
+// =============================================================================
+// Conflict Detection Types (Policy-Based)
+// =============================================================================
+
+// Types of conflicts that can occur between policies
 export type ConflictType = 
-  | 'category_overlap'           // Multiple rules of same category triggered
-  | 'condition_overlap'          // Rules with overlapping condition ranges
-  | 'requirement_contradiction'; // Rules with conflicting outputs
+  | 'type_overlap'               // Multiple policies of same type triggered
+  | 'condition_overlap'          // Policies with overlapping condition ranges
+  | 'output_contradiction';      // Policies with conflicting outputs
 
 // Severity levels for conflicts
 export type ConflictSeverity = 'info' | 'warning' | 'critical';
 
-// A rule that has been matched/triggered during compliance checking
-export interface MatchedRule {
+// A policy that has been matched/triggered during compliance checking
+export interface MatchedPolicy {
   id: string;
-  title: string;
-  category: RuleCategory;
-  summary: string;
-  severity: RuleSeverity;
-  conditions: RuleCondition | any; // Legacy or IfThen conditions
+  name: string;
+  policyType: PolicyType;
+  description?: string;
+  severity: PolicySeverity;
+  conditions: PolicyCondition[];
   jurisdictionId?: string;
   jurisdictionName?: string;
   priority?: number;
-  // For IfThen rules, the requirement output
-  requirement?: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;
-  requirementType?: 'escort' | 'utility_notice' | 'permit_requirement';
+  // The output from the matched policy
+  output?: PolicyOutput;
 }
 
-// A group of rules that conflict with each other
+// A group of policies that conflict with each other
 export interface ConflictGroup {
   id: string;
   type: ConflictType;
-  rules: MatchedRule[];
+  policies: MatchedPolicy[];
   severity: ConflictSeverity;
   description: string;
   details?: string;
   suggestedResolution?: string;
   // For condition overlaps, the specific attributes that overlap
   overlappingAttributes?: RuleAttribute[];
-  // For requirement contradictions, what specifically contradicts
+  // For output contradictions, what specifically contradicts
   contradictions?: {
     field: string;
-    values: Array<{ ruleId: string; ruleTitle: string; value: any }>;
+    values: Array<{ policyId: string; policyName: string; value: any }>;
   }[];
 }
 
@@ -680,30 +864,35 @@ export interface ConflictGroup {
 export interface ConflictAnalysis {
   hasConflicts: boolean;
   groups: ConflictGroup[];
-  totalConflictingRules: number;
+  totalConflictingPolicies: number;
   // Summary counts by type
-  categoryOverlaps: number;
+  typeOverlaps: number;
   conditionOverlaps: number;
-  requirementContradictions: number;
-  // Auto-resolved requirements using cumulative max strategy
-  resolvedRequirements?: {
+  outputContradictions: number;
+  // Auto-resolved outputs using merge strategies
+  resolvedOutputs?: {
     escort?: EscortRequirement;
-    utilityNotice?: UtilityNoticeRequirement;
+    permit?: PermitRequirement;
+    utility?: UtilityNoticeRequirement;
+    speed?: SpeedRequirement;
+    hours?: HoursRequirement;
+    route?: RouteRequirement;
+    dimension?: DimensionRequirement;
   };
 }
 
 // Resolution strategies for conflicts
 export type ResolutionStrategy = 
-  | 'priority'      // Higher priority rule wins
+  | 'priority'      // Higher priority policy wins
   | 'specificity'   // More specific conditions win
-  | 'cumulative'    // Apply all rules (e.g., take max escorts)
+  | 'merge'         // Merge using strategies (e.g., take max escorts)
   | 'manual';       // User chooses per conflict
 
 // Resolution record for a specific conflict
 export interface ConflictResolution {
   conflictGroupId: string;
   strategy: ResolutionStrategy;
-  winningRuleId?: string;  // For priority/specificity/manual strategies
+  winningPolicyId?: string;  // For priority/specificity/manual strategies
   resolvedBy?: string;
   resolvedAt?: number;
   notes?: string;
