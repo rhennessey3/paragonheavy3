@@ -191,3 +191,4 @@ function FacetNodeComponent({ data, selected }: FacetNodeProps) {
 
 export const FacetNode = memo(FacetNodeComponent);
 
+
