@@ -26,7 +26,6 @@ import {
   Search,
   Plus,
   MoreVertical,
-  Edit2,
   Trash2,
   Archive,
   CheckCircle,
@@ -279,7 +278,7 @@ export default function PoliciesPage() {
                     <Card
                       key={policy._id}
                       className="hover:shadow-md transition-shadow cursor-pointer"
-                      onClick={() => router.push(`/dashboard/compliance/policies/${policy._id}`)}
+                      onClick={() => router.push(`/dashboard/compliance/graph?jurisdiction=${policy.jurisdictionId}`)}
                     >
                       <CardHeader className="pb-2">
                         <div className="flex items-start justify-between">
@@ -300,10 +299,10 @@ export default function PoliciesPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/dashboard/compliance/policies/${policy._id}`);
+                                router.push(`/dashboard/compliance/graph?jurisdiction=${policy.jurisdictionId}`);
                               }}>
-                                <Edit2 className="h-4 w-4 mr-2" />
-                                Edit
+                                <GitBranch className="h-4 w-4 mr-2" />
+                                View on Canvas
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               {policy.status === "draft" && (
@@ -371,5 +370,6 @@ export default function PoliciesPage() {
     </div>
   );
 }
+
 
 

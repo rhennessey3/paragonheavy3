@@ -155,7 +155,7 @@ export function JurisdictionInfoPanel({ jurisdiction, onClose }: JurisdictionInf
                   return (
                     <button
                       key={policy._id}
-                      onClick={() => router.push(`/dashboard/compliance/policies/${policy._id}`)}
+                      onClick={() => router.push(`/dashboard/compliance/graph?jurisdiction=${jurisdiction._id}`)}
                       className="text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
                     >
                       <div className="flex items-start justify-between gap-2">

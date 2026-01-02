@@ -71,7 +71,7 @@ export default function NewPolicyPage() {
     }
 
     try {
-      const policyId = await createPolicy({
+      await createPolicy({
         jurisdictionId: selectedJurisdiction as Id<"jurisdictions">,
         policyType: policyData.policyType!,
         name: policyData.name!,
@@ -81,7 +81,7 @@ export default function NewPolicyPage() {
         mergeStrategies: policyData.mergeStrategies,
       });
       toast.success("Policy created");
-      router.push(`/dashboard/compliance/policies/${policyId}`);
+      router.push(`/dashboard/compliance/graph?jurisdiction=${selectedJurisdiction}`);
     } catch (error) {
       toast.error("Failed to create policy");
       console.error(error);
@@ -214,5 +214,6 @@ export default function NewPolicyPage() {
     </div>
   );
 }
+
 
 

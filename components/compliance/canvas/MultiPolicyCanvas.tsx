@@ -13,7 +13,9 @@ import {
   type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type ReactFlowInstance,
+  type Viewport,
   MarkerType,
   BackgroundVariant,
 } from "@xyflow/react";
@@ -21,7 +23,17 @@ import "@xyflow/react/dist/style.css";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Save, Trash2, Undo, Info, AlertCircle } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Save, Trash2, Undo, Info, AlertCircle, RotateCcw, FileText, Check } from "lucide-react";
 import { toast } from "sonner";
 
 import { NodePalette } from "./NodePalette";
@@ -64,11 +76,38 @@ const defaultEdgeOptions = {
   },
 };
 
+// Type for saved node positions
+export interface SavedNodePositions {
+  [nodeId: string]: { x: number; y: number };
+}
+
+// Type for saved viewport
+export interface SavedViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+// Draft data structure for saving/loading canvas state
+export interface CanvasDraftData {
+  draftId?: string;
+  name: string;
+  nodes: Node[];
+  edges: Edge[];
+  viewport?: SavedViewport;
+}
+
 interface MultiPolicyCanvasProps {
   /** Existing policies to display */
   policies: CompliancePolicy[];
   /** Current jurisdiction ID */
   jurisdictionId?: string;
+  /** Saved node positions from database */
+  savedPositions?: SavedNodePositions;
+  /** Saved viewport from database */
+  savedViewport?: SavedViewport;
+  /** Currently loaded draft (if any) */
+  currentDraft?: CanvasDraftData | null;
   /** Callback when a policy needs to be created */
   onCreatePolicy: (policy: Partial<CompliancePolicy>) => Promise<string>;
   /** Callback when a policy needs to be updated */
@@ -77,6 +116,16 @@ interface MultiPolicyCanvasProps {
   onDeletePolicy?: (policyId: string) => Promise<void>;
   /** Callback when a policy is clicked (for navigation) */
   onPolicyClick?: (policyId: string) => void;
+  /** Callback when node positions change (for persistence) */
+  onPositionsChange?: (positions: SavedNodePositions, viewport: SavedViewport) => void;
+  /** Callback to reset layout to default */
+  onResetLayout?: () => void;
+  /** Callback to save canvas as draft */
+  onSaveDraft?: (draft: CanvasDraftData) => Promise<string>;
+  /** Whether draft is currently saving */
+  isSavingDraft?: boolean;
+  /** Last saved timestamp for draft indicator */
+  lastDraftSaved?: number;
 }
 
 // Generate unique ID
@@ -90,18 +139,48 @@ const POLICY_SPACING_Y = 400;
 const POLICIES_PER_ROW = 3;
 const CONDITION_OFFSET_Y = -200;
 
+// Debounce delay for saving positions (in ms)
+const POSITION_SAVE_DEBOUNCE_MS = 800;
+
 export function MultiPolicyCanvas({
   policies,
   jurisdictionId,
+  savedPositions,
+  savedViewport,
+  currentDraft,
   onCreatePolicy,
   onUpdatePolicy,
   onDeletePolicy,
   onPolicyClick,
+  onPositionsChange,
+  onResetLayout,
+  onSaveDraft,
+  isSavingDraft,
+  lastDraftSaved,
 }: MultiPolicyCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [savingPolicies, setSavingPolicies] = useState<Set<string>>(new Set());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // Draft saving state
+  const [showSaveDraftDialog, setShowSaveDraftDialog] = useState(false);
+  const [draftName, setDraftName] = useState(currentDraft?.name || "");
+  const [currentDraftId, setCurrentDraftId] = useState<string | undefined>(currentDraft?.draftId);
+  
+  // Ref to track debounced save timer
+  const positionSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Track if we've applied saved positions (to avoid re-applying on every render)
+  const hasAppliedSavedPositions = useRef(false);
+
+  // Helper to get position - uses saved position if available, otherwise calculates default
+  const getNodePosition = useCallback((nodeId: string, defaultPosition: { x: number; y: number }) => {
+    if (savedPositions && savedPositions[nodeId]) {
+      return savedPositions[nodeId];
+    }
+    return defaultPosition;
+  }, [savedPositions]);
 
   // Convert existing policies to nodes
   const initialNodes = useMemo(() => {
@@ -113,14 +192,17 @@ export function MultiPolicyCanvas({
       const col = index % POLICIES_PER_ROW;
       const policyNodeId = `policy_${policy._id}`;
 
-      // Create policy center node
+      // Calculate default position
+      const defaultPolicyPosition = { 
+        x: 100 + col * POLICY_SPACING_X, 
+        y: 200 + row * POLICY_SPACING_Y 
+      };
+
+      // Create policy center node with saved or default position
       nodes.push({
         id: policyNodeId,
         type: "policyCenter",
-        position: { 
-          x: 100 + col * POLICY_SPACING_X, 
-          y: 200 + row * POLICY_SPACING_Y 
-        },
+        position: getNodePosition(policyNodeId, defaultPolicyPosition),
         data: {
           _id: policy._id,
           policyType: policy.policyType,
@@ -143,10 +225,11 @@ export function MultiPolicyCanvas({
 
           // Attribute node
           const attrId = `attr_${policy._id}_${condition.id}`;
+          const defaultAttrPosition = { x: baseX, y: baseY };
           nodes.push({
             id: attrId,
             type: "attribute",
-            position: { x: baseX, y: baseY },
+            position: getNodePosition(attrId, defaultAttrPosition),
             data: {
               id: condition.id,
               attribute: condition.attribute,
@@ -157,10 +240,11 @@ export function MultiPolicyCanvas({
 
           // Operator node
           const opId = `op_${policy._id}_${condition.id}`;
+          const defaultOpPosition = { x: baseX + spacing, y: baseY };
           nodes.push({
             id: opId,
             type: "operator",
-            position: { x: baseX + spacing, y: baseY },
+            position: getNodePosition(opId, defaultOpPosition),
             data: {
               id: `op_${condition.id}`,
               operator: condition.operator,
@@ -171,10 +255,11 @@ export function MultiPolicyCanvas({
 
           // Value node
           const valId = `val_${policy._id}_${condition.id}`;
+          const defaultValPosition = { x: baseX + spacing * 2, y: baseY };
           nodes.push({
             id: valId,
             type: "value",
-            position: { x: baseX + spacing * 2, y: baseY },
+            position: getNodePosition(valId, defaultValPosition),
             data: {
               id: `val_${condition.id}`,
               valueType: getValueType(condition.value),
@@ -184,10 +269,11 @@ export function MultiPolicyCanvas({
 
           // Output node
           const outId = `out_${policy._id}_${condition.id}`;
+          const defaultOutPosition = { x: baseX + spacing * 3, y: baseY };
           nodes.push({
             id: outId,
             type: "output",
-            position: { x: baseX + spacing * 3, y: baseY },
+            position: getNodePosition(outId, defaultOutPosition),
             data: {
               id: `out_${condition.id}`,
               outputType: policy.policyType,
@@ -208,9 +294,9 @@ export function MultiPolicyCanvas({
     });
 
     return { nodes, edges };
-  }, [policies]);
+  }, [policies, getNodePosition]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.nodes);
+  const [nodes, setNodes, onNodesChangeBase] = useNodesState(initialNodes.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialNodes.edges);
 
   // Re-initialize when policies change
@@ -218,6 +304,85 @@ export function MultiPolicyCanvas({
     setNodes(initialNodes.nodes);
     setEdges(initialNodes.edges);
   }, [initialNodes, setNodes, setEdges]);
+  
+  // Debounced position save handler
+  const schedulePositionSave = useCallback(() => {
+    if (!onPositionsChange) return;
+    
+    // Clear existing timer
+    if (positionSaveTimerRef.current) {
+      clearTimeout(positionSaveTimerRef.current);
+    }
+    
+    // Schedule new save
+    positionSaveTimerRef.current = setTimeout(() => {
+      // Get current positions from nodes
+      setNodes((currentNodes) => {
+        const positions: SavedNodePositions = {};
+        currentNodes.forEach((node) => {
+          positions[node.id] = { x: node.position.x, y: node.position.y };
+        });
+        
+        // Get current viewport
+        const viewport = reactFlowInstance?.getViewport() || { x: 0, y: 0, zoom: 1 };
+        
+        // Call the save handler
+        onPositionsChange(positions, viewport);
+        
+        return currentNodes; // Don't modify nodes
+      });
+    }, POSITION_SAVE_DEBOUNCE_MS);
+  }, [onPositionsChange, setNodes, reactFlowInstance]);
+  
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (positionSaveTimerRef.current) {
+        clearTimeout(positionSaveTimerRef.current);
+      }
+    };
+  }, []);
+  
+  // Wrapped onNodesChange to track position changes
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      // Apply the changes
+      onNodesChangeBase(changes);
+      
+      // Check if any change is a position change
+      const hasPositionChange = changes.some(
+        (change) => change.type === "position" && change.dragging === false
+      );
+      
+      if (hasPositionChange) {
+        schedulePositionSave();
+      }
+    },
+    [onNodesChangeBase, schedulePositionSave]
+  );
+  
+  // Handle viewport changes (pan/zoom)
+  const onMoveEnd = useCallback(
+    (_event: any, viewport: Viewport) => {
+      if (onPositionsChange) {
+        // Get current positions
+        const positions: SavedNodePositions = {};
+        nodes.forEach((node) => {
+          positions[node.id] = { x: node.position.x, y: node.position.y };
+        });
+        
+        // Debounce the save
+        if (positionSaveTimerRef.current) {
+          clearTimeout(positionSaveTimerRef.current);
+        }
+        
+        positionSaveTimerRef.current = setTimeout(() => {
+          onPositionsChange(positions, viewport);
+        }, POSITION_SAVE_DEBOUNCE_MS);
+      }
+    },
+    [nodes, onPositionsChange]
+  );
 
   // Save a new policy - defined early so it can be used in useEffects
   const handleSaveNewPolicy = useCallback(async (nodeId: string) => {
@@ -533,6 +698,80 @@ export function MultiPolicyCanvas({
     return nodes.filter(n => n.type === "output").length;
   }, [nodes]);
 
+  // Handle saving draft
+  const handleSaveDraft = useCallback(async () => {
+    if (!onSaveDraft) return;
+    
+    const trimmedName = draftName.trim();
+    if (!trimmedName) {
+      toast.error("Please enter a draft name");
+      return;
+    }
+
+    const viewport = reactFlowInstance?.getViewport();
+    
+    try {
+      const savedDraftId = await onSaveDraft({
+        draftId: currentDraftId,
+        name: trimmedName,
+        nodes,
+        edges,
+        viewport: viewport ? { x: viewport.x, y: viewport.y, zoom: viewport.zoom } : undefined,
+      });
+      
+      setCurrentDraftId(savedDraftId);
+      setShowSaveDraftDialog(false);
+      setHasUnsavedChanges(false);
+      toast.success(currentDraftId ? "Draft updated" : "Draft saved");
+    } catch (error) {
+      console.error("Failed to save draft:", error);
+      toast.error("Failed to save draft");
+    }
+  }, [onSaveDraft, draftName, currentDraftId, nodes, edges, reactFlowInstance]);
+
+  // Quick save (update existing draft without dialog)
+  const handleQuickSaveDraft = useCallback(async () => {
+    if (!onSaveDraft || !currentDraftId || !draftName) {
+      setShowSaveDraftDialog(true);
+      return;
+    }
+
+    const viewport = reactFlowInstance?.getViewport();
+    
+    try {
+      await onSaveDraft({
+        draftId: currentDraftId,
+        name: draftName,
+        nodes,
+        edges,
+        viewport: viewport ? { x: viewport.x, y: viewport.y, zoom: viewport.zoom } : undefined,
+      });
+      
+      setHasUnsavedChanges(false);
+      toast.success("Draft saved");
+    } catch (error) {
+      console.error("Failed to save draft:", error);
+      toast.error("Failed to save draft");
+    }
+  }, [onSaveDraft, currentDraftId, draftName, nodes, edges, reactFlowInstance]);
+
+  // Update draft info when currentDraft prop changes
+  useEffect(() => {
+    if (currentDraft) {
+      setDraftName(currentDraft.name);
+      setCurrentDraftId(currentDraft.draftId);
+    }
+  }, [currentDraft]);
+
+  // Format last saved time
+  const lastSavedText = useMemo(() => {
+    if (!lastDraftSaved) return null;
+    const diff = Date.now() - lastDraftSaved;
+    if (diff < 60000) return "Just now";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    return new Date(lastDraftSaved).toLocaleTimeString();
+  }, [lastDraftSaved]);
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left Sidebar - Node Palette */}
@@ -559,6 +798,47 @@ export function MultiPolicyCanvas({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Draft indicator */}
+            {currentDraftId && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                <FileText className="h-3 w-3" />
+                <span className="font-medium truncate max-w-[120px]">{draftName}</span>
+                {lastSavedText && (
+                  <span className="text-gray-400">({lastSavedText})</span>
+                )}
+              </div>
+            )}
+            
+            {/* Save Draft Button */}
+            {onSaveDraft && (
+              <Button
+                variant={hasUnsavedChanges ? "default" : "outline"}
+                size="sm"
+                onClick={handleQuickSaveDraft}
+                disabled={isSavingDraft}
+                title={currentDraftId ? "Save draft (Ctrl+S)" : "Save as draft"}
+              >
+                {isSavingDraft ? (
+                  <div className="h-4 w-4 animate-spin border-2 border-white border-t-transparent rounded-full mr-1" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                {currentDraftId ? "Save" : "Save Draft"}
+              </Button>
+            )}
+            
+            <div className="h-6 w-px bg-gray-200" />
+            
+            {onResetLayout && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onResetLayout}
+                title="Reset layout to default"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -567,7 +847,7 @@ export function MultiPolicyCanvas({
             >
               <Trash2 className="h-4 w-4" />
             </Button>
-            {hasUnsavedChanges && (
+            {hasUnsavedChanges && !currentDraftId && (
               <Badge variant="outline" className="text-amber-600 border-amber-300">
                 <AlertCircle className="h-3 w-3 mr-1" />
                 Unsaved changes
@@ -587,10 +867,12 @@ export function MultiPolicyCanvas({
             onInit={setReactFlowInstance}
             onDrop={onDrop}
             onDragOver={onDragOver}
+            onMoveEnd={onMoveEnd}
             nodeTypes={nodeTypes}
             isValidConnection={isValidConnection}
-            fitView
+            fitView={!savedViewport}
             fitViewOptions={{ padding: 0.2 }}
+            defaultViewport={savedViewport}
             minZoom={0.1}
             maxZoom={2}
             defaultEdgeOptions={defaultEdgeOptions}
@@ -668,6 +950,49 @@ export function MultiPolicyCanvas({
           </ReactFlow>
         </div>
       </div>
+
+      {/* Save Draft Dialog */}
+      <Dialog open={showSaveDraftDialog} onOpenChange={setShowSaveDraftDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Save Draft</DialogTitle>
+            <DialogDescription>
+              Save your current canvas state to continue working on it later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="draft-name" className="text-sm font-medium">
+              Draft Name
+            </Label>
+            <Input
+              id="draft-name"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              placeholder="e.g., PA Escort Policy WIP"
+              className="mt-1.5"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSaveDraft();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDraftDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveDraft} disabled={isSavingDraft || !draftName.trim()}>
+              {isSavingDraft ? (
+                <div className="h-4 w-4 animate-spin border-2 border-white border-t-transparent rounded-full mr-1" />
+              ) : (
+                <Save className="h-4 w-4 mr-1" />
+              )}
+              Save Draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

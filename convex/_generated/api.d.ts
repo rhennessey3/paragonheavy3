@@ -10,6 +10,8 @@
 
 import type * as addRealData from "../addRealData.js";
 import type * as auth from "../auth.js";
+import type * as canvasDrafts from "../canvasDrafts.js";
+import type * as canvasLayouts from "../canvasLayouts.js";
 import type * as clearConvexData from "../clearConvexData.js";
 import type * as compliance from "../compliance.js";
 import type * as debug from "../debug.js";
@@ -38,6 +40,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   addRealData: typeof addRealData;
   auth: typeof auth;
+  canvasDrafts: typeof canvasDrafts;
+  canvasLayouts: typeof canvasLayouts;
   clearConvexData: typeof clearConvexData;
   compliance: typeof compliance;
   debug: typeof debug;

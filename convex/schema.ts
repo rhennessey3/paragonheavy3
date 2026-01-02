@@ -471,4 +471,43 @@ export default defineSchema({
     .index("by_jurisdiction", ["jurisdictionId"])
     .index("by_source", ["sourcePolicyId"])
     .index("by_target", ["targetPolicyId"]),
+
+  // ==========================================================================
+  // CANVAS LAYOUTS - User-specific canvas position persistence
+  // ==========================================================================
+
+  // Store user's node positions and viewport for the compliance graph canvas
+  canvasLayouts: defineTable({
+    clerkUserId: v.string(),                        // User who owns this layout
+    jurisdictionId: v.optional(v.string()),         // "all" or specific jurisdiction ID
+    nodePositions: v.any(),                         // { [nodeId]: { x: number, y: number } }
+    viewport: v.optional(v.object({                 // Canvas viewport state
+      x: v.number(),
+      y: v.number(),
+      zoom: v.number(),
+    })),
+    updatedAt: v.number(),
+  })
+    .index("by_user_jurisdiction", ["clerkUserId", "jurisdictionId"]),
+
+  // ==========================================================================
+  // CANVAS DRAFTS - Save work-in-progress policy canvas state
+  // ==========================================================================
+
+  canvasDrafts: defineTable({
+    clerkUserId: v.string(),                        // User who owns this draft
+    name: v.string(),                               // Draft name (e.g., "My WIP Policy")
+    jurisdictionId: v.optional(v.id("jurisdictions")), // Associated jurisdiction
+    nodes: v.any(),                                 // ReactFlow nodes array
+    edges: v.any(),                                 // ReactFlow edges array
+    viewport: v.optional(v.object({                 // Canvas viewport state
+      x: v.number(),
+      y: v.number(),
+      zoom: v.number(),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["clerkUserId"])
+    .index("by_user_jurisdiction", ["clerkUserId", "jurisdictionId"]),
 });
