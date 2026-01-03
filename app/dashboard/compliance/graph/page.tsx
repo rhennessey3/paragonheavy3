@@ -60,6 +60,7 @@ export default function PolicyGraphPage() {
   const createPolicy = useMutation(api.policies.createPolicy);
   const updatePolicy = useMutation(api.policies.updatePolicy);
   const deletePolicy = useMutation(api.policies.deletePolicy);
+  const updatePolicyStatus = useMutation(api.policies.updatePolicyStatus);
   
   // Canvas layout persistence
   const canvasLayout = useQuery(api.canvasLayouts.getCanvasLayout, {
@@ -87,7 +88,7 @@ export default function PolicyGraphPage() {
   );
 
   // Handle creating a new policy
-  const handleCreatePolicy = useCallback(async (policyData: Partial<CompliancePolicy>): Promise<string> => {
+  const handleCreatePolicy = useCallback(async (policyData: Partial<CompliancePolicy> & { status?: "draft" | "published" }): Promise<string> => {
     if (!policyData.jurisdictionId) {
       throw new Error("Jurisdiction is required");
     }
@@ -100,6 +101,7 @@ export default function PolicyGraphPage() {
       conditions: policyData.conditions,
       baseOutput: policyData.baseOutput,
       mergeStrategies: policyData.mergeStrategies,
+      status: policyData.status,
     });
 
     return policyId;
@@ -124,6 +126,14 @@ export default function PolicyGraphPage() {
     });
     toast.success("Policy deleted");
   }, [deletePolicy]);
+
+  // Handle publishing a draft policy
+  const handlePublishPolicy = useCallback(async (policyId: string): Promise<void> => {
+    await updatePolicyStatus({
+      policyId: policyId as Id<"compliancePolicies">,
+      status: "published",
+    });
+  }, [updatePolicyStatus]);
 
   // Handle policy click - policy is already visible on canvas, no navigation needed
   const handlePolicyClick = useCallback((policyId: string) => {
@@ -403,6 +413,7 @@ export default function PolicyGraphPage() {
             onCreatePolicy={handleCreatePolicy}
             onUpdatePolicy={handleUpdatePolicy}
             onDeletePolicy={handleDeletePolicy}
+            onPublishPolicy={handlePublishPolicy}
             onPolicyClick={handlePolicyClick}
             onPositionsChange={handlePositionsChange}
             onResetLayout={handleResetLayout}

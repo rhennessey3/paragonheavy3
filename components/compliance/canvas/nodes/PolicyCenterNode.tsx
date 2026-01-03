@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, Shield, Settings, FileText, Merge, Save, Sparkles, Car, Gauge, Clock, MapPin, Zap, Ruler } from "lucide-react";
+import { ChevronDown, ChevronRight, Shield, Settings, FileText, Merge, Save, Sparkles, Car, Gauge, Clock, MapPin, Zap, Ruler, Send, Loader2 } from "lucide-react";
 import { type PolicyType, POLICY_TYPES } from "@/lib/compliance";
 
 export interface PolicyCenterNodeData {
@@ -29,6 +29,10 @@ export interface PolicyCenterNodeData {
   onSave?: () => void;
   /** Whether save is in progress */
   isSaving?: boolean;
+  /** Callback to publish a draft policy */
+  onPublish?: () => void;
+  /** Whether publish is in progress */
+  isPublishing?: boolean;
   /** Number of connected conditions */
   conditionCount?: number;
 }
@@ -317,9 +321,26 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-2 text-xs text-indigo-600">
-            <Shield className="h-3 w-3" />
-            <span>Central Policy Aggregator</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-indigo-600">
+              <Shield className="h-3 w-3" />
+              <span>Policy</span>
+            </div>
+            {data.status === "draft" && data.onPublish && (
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                onClick={data.onPublish}
+                disabled={data.isPublishing}
+              >
+                {data.isPublishing ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Send className="h-3 w-3 mr-1" />
+                )}
+                {data.isPublishing ? "Publishing..." : "Publish"}
+              </Button>
+            )}
           </div>
         )}
       </div>

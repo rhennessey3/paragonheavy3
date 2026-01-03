@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Save, Trash2, Undo, Info, AlertCircle, RotateCcw, FileText, Check } from "lucide-react";
+import { Save, Trash2, Undo, Redo, Info, AlertCircle, LayoutGrid, FileText, Check, HelpCircle, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { NodePalette } from "./NodePalette";
@@ -42,8 +42,9 @@ import { OperatorNode } from "./nodes/OperatorNode";
 import { ValueNode } from "./nodes/ValueNode";
 import { OutputNode } from "./nodes/OutputNode";
 import { PolicyCenterNode, type PolicyCenterNodeData } from "./nodes/PolicyCenterNode";
-import { 
-  type CompliancePolicy, 
+import { SaveOptionsDialog } from "./SaveOptionsDialog";
+import {
+  type CompliancePolicy,
   type PolicyType,
   type PolicyCondition,
 } from "@/lib/compliance";
@@ -109,11 +110,13 @@ interface MultiPolicyCanvasProps {
   /** Currently loaded draft (if any) */
   currentDraft?: CanvasDraftData | null;
   /** Callback when a policy needs to be created */
-  onCreatePolicy: (policy: Partial<CompliancePolicy>) => Promise<string>;
+  onCreatePolicy: (policy: Partial<CompliancePolicy> & { status?: "draft" | "published" }) => Promise<string>;
   /** Callback when a policy needs to be updated */
   onUpdatePolicy: (policyId: string, updates: Partial<CompliancePolicy>) => Promise<void>;
   /** Callback when a policy is deleted */
   onDeletePolicy?: (policyId: string) => Promise<void>;
+  /** Callback when a policy status is updated (for publishing) */
+  onPublishPolicy?: (policyId: string) => Promise<void>;
   /** Callback when a policy is clicked (for navigation) */
   onPolicyClick?: (policyId: string) => void;
   /** Callback when node positions change (for persistence) */
@@ -151,6 +154,7 @@ export function MultiPolicyCanvas({
   onCreatePolicy,
   onUpdatePolicy,
   onDeletePolicy,
+  onPublishPolicy,
   onPolicyClick,
   onPositionsChange,
   onResetLayout,
@@ -161,12 +165,20 @@ export function MultiPolicyCanvas({
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [savingPolicies, setSavingPolicies] = useState<Set<string>>(new Set());
+  const [publishingPolicies, setPublishingPolicies] = useState<Set<string>>(new Set());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
   // Draft saving state
   const [showSaveDraftDialog, setShowSaveDraftDialog] = useState(false);
   const [draftName, setDraftName] = useState(currentDraft?.name || "");
   const [currentDraftId, setCurrentDraftId] = useState<string | undefined>(currentDraft?.draftId);
+
+  // Save options dialog state (for choosing draft vs publish)
+  const [showSaveOptionsDialog, setShowSaveOptionsDialog] = useState(false);
+  const [pendingSaveNodeId, setPendingSaveNodeId] = useState<string | null>(null);
+
+  // Help panel state
+  const [showHelpPanel, setShowHelpPanel] = useState(false);
   
   // Ref to track debounced save timer
   const positionSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -256,15 +268,32 @@ export function MultiPolicyCanvas({
           // Value node
           const valId = `val_${policy._id}_${condition.id}`;
           const defaultValPosition = { x: baseX + spacing * 2, y: baseY };
+          const valueType = getValueType(condition.value);
+
+          // For number values, enable feet/inches mode and calculate from decimal
+          let valueData: any = {
+            id: `val_${condition.id}`,
+            valueType,
+            value: condition.value,
+          };
+
+          if (valueType === "number" && typeof condition.value === "number") {
+            const totalFeet = condition.value;
+            const feet = Math.floor(totalFeet);
+            const inches = Math.round((totalFeet - feet) * 12);
+            valueData = {
+              ...valueData,
+              useFeetInches: true,
+              feet,
+              inches,
+            };
+          }
+
           nodes.push({
             id: valId,
             type: "value",
             position: getNodePosition(valId, defaultValPosition),
-            data: {
-              id: `val_${condition.id}`,
-              valueType: getValueType(condition.value),
-              value: condition.value,
-            },
+            data: valueData,
           });
 
           // Output node
@@ -299,11 +328,127 @@ export function MultiPolicyCanvas({
   const [nodes, setNodes, onNodesChangeBase] = useNodesState(initialNodes.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialNodes.edges);
 
-  // Re-initialize when policies change
+  // Refs to track current nodes/edges for use in callbacks without stale closure issues
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+
+  // Keep refs in sync with state
   useEffect(() => {
-    setNodes(initialNodes.nodes);
-    setEdges(initialNodes.edges);
-  }, [initialNodes, setNodes, setEdges]);
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
+
+  // History state for undo/redo
+  const historyRef = useRef<{
+    past: Array<{ nodes: Node[]; edges: Edge[] }>;
+    future: Array<{ nodes: Node[]; edges: Edge[] }>;
+  }>({ past: [], future: [] });
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const isUndoRedoAction = useRef(false);
+  const MAX_HISTORY_SIZE = 50;
+
+  // Record current state to history
+  const recordHistory = useCallback(() => {
+    if (isUndoRedoAction.current) {
+      isUndoRedoAction.current = false;
+      return;
+    }
+
+    historyRef.current.past.push({
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    });
+
+    // Limit history size
+    if (historyRef.current.past.length > MAX_HISTORY_SIZE) {
+      historyRef.current.past.shift();
+    }
+
+    // Clear future on new action
+    historyRef.current.future = [];
+
+    setCanUndo(historyRef.current.past.length > 0);
+    setCanRedo(false);
+  }, [nodes, edges]);
+
+  // Undo action
+  const handleUndo = useCallback(() => {
+    if (historyRef.current.past.length === 0) return;
+
+    const previous = historyRef.current.past.pop()!;
+
+    // Save current state to future
+    historyRef.current.future.push({
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    });
+
+    isUndoRedoAction.current = true;
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+
+    setCanUndo(historyRef.current.past.length > 0);
+    setCanRedo(true);
+  }, [nodes, edges, setNodes, setEdges]);
+
+  // Redo action
+  const handleRedo = useCallback(() => {
+    if (historyRef.current.future.length === 0) return;
+
+    const next = historyRef.current.future.pop()!;
+
+    // Save current state to past
+    historyRef.current.past.push({
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    });
+
+    isUndoRedoAction.current = true;
+    setNodes(next.nodes);
+    setEdges(next.edges);
+
+    setCanUndo(true);
+    setCanRedo(historyRef.current.future.length > 0);
+  }, [nodes, edges, setNodes, setEdges]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      }
+      // Also support Ctrl+Y for redo on Windows
+      if ((e.ctrlKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // Track which policies we've initialized to avoid resetting user's work
+  const initializedPoliciesRef = useRef<string>("");
+
+  // Only re-initialize when the actual policy list changes (add/remove), not position updates
+  const policyIds = useMemo(() => policies.map(p => p._id).sort().join(','), [policies]);
+
+  useEffect(() => {
+    // Only reset if the policy list actually changed
+    if (initializedPoliciesRef.current !== policyIds) {
+      setNodes(initialNodes.nodes);
+      setEdges(initialNodes.edges);
+      initializedPoliciesRef.current = policyIds;
+    }
+  }, [policyIds, initialNodes, setNodes, setEdges]);
   
   // Debounced position save handler
   const schedulePositionSave = useCallback(() => {
@@ -385,23 +530,11 @@ export function MultiPolicyCanvas({
   );
 
   // Save a new policy - defined early so it can be used in useEffects
-  const handleSaveNewPolicy = useCallback(async (nodeId: string) => {
-    // Use functional state updates to get the latest nodes/edges
-    let policyNode: Node | undefined;
-    let currentNodes: Node[] = [];
-    let currentEdges: Edge[] = [];
-    
-    // Get current state synchronously using functional updates
-    setNodes((nds) => {
-      currentNodes = nds;
-      policyNode = nds.find(n => n.id === nodeId && n.type === "policyCenter");
-      return nds; // Don't change anything
-    });
-    
-    setEdges((eds) => {
-      currentEdges = eds;
-      return eds; // Don't change anything
-    });
+  const handleSaveNewPolicy = useCallback(async (nodeId: string, status: "draft" | "published" = "draft") => {
+    // Use refs to get current nodes/edges (refs are always up-to-date)
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    const policyNode = currentNodes.find(n => n.id === nodeId && n.type === "policyCenter");
 
     if (!policyNode) {
       toast.error("Policy node not found");
@@ -465,6 +598,7 @@ export function MultiPolicyCanvas({
         conditions,
         baseOutput: policyData.baseOutput,
         mergeStrategies: policyData.mergeStrategies,
+        status,
       });
 
       // Update the node to mark it as saved
@@ -478,6 +612,7 @@ export function MultiPolicyCanvas({
                   ...node.data,
                   _id: newPolicyId,
                   isNew: false,
+                  status,
                   onSave: undefined,
                 },
               }
@@ -494,7 +629,7 @@ export function MultiPolicyCanvas({
         }))
       );
 
-      toast.success("Policy created successfully!");
+      toast.success(status === "published" ? "Policy published!" : "Policy saved as draft!");
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error("Failed to save policy:", error);
@@ -509,33 +644,98 @@ export function MultiPolicyCanvas({
   }, [jurisdictionId, onCreatePolicy, setNodes, setEdges]);
 
   // Store a ref to the save handler so nodes can access it
-  const saveHandlerRef = useRef<(nodeId: string) => void>(() => {});
-  
+  const saveHandlerRef = useRef<(nodeId: string, status: "draft" | "published") => void>(() => {});
+
   // Update the ref whenever handleSaveNewPolicy changes
   useEffect(() => {
     saveHandlerRef.current = handleSaveNewPolicy;
   }, [handleSaveNewPolicy]);
-  
-  // Inject onSave callback into new policy nodes
+
+  // Handler to show the save options dialog
+  const handleShowSaveOptionsDialog = useCallback((nodeId: string) => {
+    setPendingSaveNodeId(nodeId);
+    setShowSaveOptionsDialog(true);
+  }, []);
+
+  // Handler for when user selects an option in the save dialog
+  const handleSaveFromDialog = useCallback(async (status: "draft" | "published") => {
+    if (!pendingSaveNodeId) return;
+
+    setShowSaveOptionsDialog(false);
+    await saveHandlerRef.current(pendingSaveNodeId, status);
+    setPendingSaveNodeId(null);
+  }, [pendingSaveNodeId]);
+
+  // Handler for publishing a draft policy
+  const handlePublishPolicy = useCallback(async (nodeId: string, policyId: string) => {
+    if (!onPublishPolicy) return;
+
+    setPublishingPolicies(prev => new Set(prev).add(nodeId));
+
+    try {
+      await onPublishPolicy(policyId);
+
+      // Update the node's status to published
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  status: "published",
+                },
+              }
+            : node
+        )
+      );
+
+      toast.success("Policy published!");
+    } catch (error) {
+      console.error("Failed to publish policy:", error);
+      toast.error("Failed to publish policy");
+    } finally {
+      setPublishingPolicies(prev => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+    }
+  }, [onPublishPolicy, setNodes]);
+
+  // Inject callbacks into policy nodes
   useEffect(() => {
     setNodes((nds) =>
       nds.map((node) => {
-        if (node.type === "policyCenter" && (node.data as PolicyCenterNodeData).isNew) {
+        if (node.type === "policyCenter") {
           const data = node.data as PolicyCenterNodeData;
-          // Update isSaving state and inject save handler
-          return {
-            ...node,
-            data: {
-              ...data,
-              isSaving: savingPolicies.has(node.id),
-              onSave: () => saveHandlerRef.current(node.id),
-            },
-          };
+
+          if (data.isNew) {
+            // New unsaved policy - inject save handler
+            return {
+              ...node,
+              data: {
+                ...data,
+                isSaving: savingPolicies.has(node.id),
+                onSave: () => handleShowSaveOptionsDialog(node.id),
+              },
+            };
+          } else if (data.status === "draft" && data._id) {
+            // Existing draft policy - inject publish handler
+            return {
+              ...node,
+              data: {
+                ...data,
+                isPublishing: publishingPolicies.has(node.id),
+                onPublish: () => handlePublishPolicy(node.id, data._id!),
+              },
+            };
+          }
         }
         return node;
       })
     );
-  }, [savingPolicies, setNodes]);
+  }, [savingPolicies, publishingPolicies, setNodes, handleShowSaveOptionsDialog, handlePublishPolicy, nodes.length]);
 
   // Validate connection based on port types
   const isValidConnection = useCallback((connection: Connection) => {
@@ -555,11 +755,13 @@ export function MultiPolicyCanvas({
   const onConnect = useCallback(
     (params: Connection) => {
       if (isValidConnection(params)) {
+        // Record history before adding edge
+        recordHistory();
         setEdges((eds) => addEdge({ ...params, ...defaultEdgeOptions }, eds));
         setHasUnsavedChanges(true);
       }
     },
-    [setEdges, isValidConnection]
+    [setEdges, isValidConnection, recordHistory]
   );
 
   // Handle dropping new nodes from palette
@@ -586,13 +788,16 @@ export function MultiPolicyCanvas({
 
       const nodeId = generateId();
 
+      // Record history before adding node
+      recordHistory();
+
       // Special handling for policy center nodes
       if (type === "policyCenter") {
         if (!jurisdictionId) {
           toast.error("Please select a jurisdiction before creating a policy");
           return;
         }
-        
+
         const newNode: Node = {
           id: nodeId,
           type,
@@ -618,10 +823,10 @@ export function MultiPolicyCanvas({
         };
         setNodes((nds) => [...nds, newNode]);
       }
-      
+
       setHasUnsavedChanges(true);
     },
-    [reactFlowInstance, setNodes, jurisdictionId]
+    [reactFlowInstance, setNodes, jurisdictionId, recordHistory]
   );
 
   // Serialize conditions for a specific policy node
@@ -671,14 +876,17 @@ export function MultiPolicyCanvas({
   const onDeleteSelected = useCallback(() => {
     const selectedNodes = nodes.filter(n => n.selected);
     const policyNodes = selectedNodes.filter(n => n.type === "policyCenter");
-    
+
     // Don't allow deleting existing policies from canvas (only new ones)
     const canDelete = policyNodes.every(n => (n.data as PolicyCenterNodeData).isNew);
-    
+
     if (!canDelete) {
       toast.error("Cannot delete saved policies from canvas. Use the policy editor instead.");
       return;
     }
+
+    // Record history before deleting
+    recordHistory();
 
     setNodes((nds) => nds.filter((node) => !node.selected));
     setEdges((eds) => {
@@ -686,7 +894,7 @@ export function MultiPolicyCanvas({
       return eds.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target));
     });
     setHasUnsavedChanges(true);
-  }, [nodes, setNodes, setEdges]);
+  }, [nodes, setNodes, setEdges, recordHistory]);
 
   // Count new (unsaved) policies
   const newPolicyCount = useMemo(() => {
@@ -828,7 +1036,29 @@ export function MultiPolicyCanvas({
             )}
             
             <div className="h-6 w-px bg-gray-200" />
-            
+
+            {/* Undo/Redo buttons */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRedo}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              <Redo className="h-4 w-4" />
+            </Button>
+
+            <div className="h-6 w-px bg-gray-200" />
+
             {onResetLayout && (
               <Button
                 variant="ghost"
@@ -836,7 +1066,7 @@ export function MultiPolicyCanvas({
                 onClick={onResetLayout}
                 title="Reset layout to default"
               >
-                <RotateCcw className="h-4 w-4" />
+                <LayoutGrid className="h-4 w-4" />
               </Button>
             )}
             <Button
@@ -917,18 +1147,36 @@ export function MultiPolicyCanvas({
 
             {/* Help Panel */}
             <Panel position="bottom-right" className="m-4">
-              <div className="bg-white rounded-lg p-3 shadow-sm text-xs max-w-[220px]">
-                <div className="flex items-center gap-2 font-medium text-gray-700 mb-2">
-                  <Info className="h-4 w-4" />
-                  How to Build
+              {showHelpPanel ? (
+                <div className="bg-white rounded-lg p-3 shadow-sm text-xs max-w-[220px]">
+                  <div className="flex items-center justify-between font-medium text-gray-700 mb-2">
+                    <div className="flex items-center gap-2">
+                      <Info className="h-4 w-4" />
+                      How to Build
+                    </div>
+                    <button
+                      onClick={() => setShowHelpPanel(false)}
+                      className="p-0.5 hover:bg-gray-100 rounded"
+                    >
+                      <X className="h-3.5 w-3.5 text-gray-400" />
+                    </button>
+                  </div>
+                  <ol className="space-y-1 text-gray-500 list-decimal list-inside">
+                    <li>Drag a <strong>Policy</strong> node onto canvas</li>
+                    <li>Drag <strong>Attribute → Operator → Value → Output</strong></li>
+                    <li>Connect Output to Policy</li>
+                    <li>Click <strong>Save</strong> on the policy node</li>
+                  </ol>
                 </div>
-                <ol className="space-y-1 text-gray-500 list-decimal list-inside">
-                  <li>Drag a <strong>Policy</strong> node onto canvas</li>
-                  <li>Drag <strong>Attribute → Operator → Value → Output</strong></li>
-                  <li>Connect Output to Policy</li>
-                  <li>Click <strong>Save</strong> on the policy node</li>
-                </ol>
-              </div>
+              ) : (
+                <button
+                  onClick={() => setShowHelpPanel(true)}
+                  className="w-9 h-9 bg-white rounded-full shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors"
+                  title="How to Build"
+                >
+                  <HelpCircle className="h-5 w-5 text-gray-500" />
+                </button>
+              )}
             </Panel>
 
             {/* Empty State Panel */}
@@ -993,6 +1241,23 @@ export function MultiPolicyCanvas({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Save Options Dialog (draft vs publish) */}
+      <SaveOptionsDialog
+        open={showSaveOptionsDialog}
+        onOpenChange={(open) => {
+          setShowSaveOptionsDialog(open);
+          // Don't clear pendingSaveNodeId here - handleSaveFromDialog clears it after save completes
+          // This prevents race condition where pendingSaveNodeId is cleared before async save finishes
+        }}
+        onSave={handleSaveFromDialog}
+        isSaving={pendingSaveNodeId ? savingPolicies.has(pendingSaveNodeId) : false}
+        policyName={
+          pendingSaveNodeId
+            ? (nodes.find(n => n.id === pendingSaveNodeId)?.data as PolicyCenterNodeData)?.name || "New Policy"
+            : "New Policy"
+        }
+      />
     </div>
   );
 }

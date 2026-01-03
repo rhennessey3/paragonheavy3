@@ -2,7 +2,6 @@
 
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps, useReactFlow } from "@xyflow/react";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Ruler, Scale, MapPin, ToggleLeft, Info, X } from "lucide-react";
 
@@ -126,13 +125,7 @@ export const AttributeNode = memo(function AttributeNode({
       )}
 
       {/* Footer */}
-      <div className="px-3 py-1.5 flex items-center justify-between">
-        <Badge
-          variant="outline"
-          className={`text-[9px] px-1.5 py-0 ${colors.text} border-current`}
-        >
-          {data.attributeType || "unknown"}
-        </Badge>
+      <div className="px-3 py-1.5">
         <div className="text-[9px] text-gray-400 font-mono">
           {data.attribute}
         </div>

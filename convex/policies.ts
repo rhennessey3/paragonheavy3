@@ -37,6 +37,10 @@ export const createPolicy = mutation({
     mergeStrategies: v.optional(v.any()),
     effectiveFrom: v.optional(v.number()),
     effectiveTo: v.optional(v.number()),
+    status: v.optional(v.union(
+      v.literal("draft"),
+      v.literal("published")
+    )),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -47,7 +51,7 @@ export const createPolicy = mutation({
       policyType: args.policyType,
       name: args.name,
       description: args.description,
-      status: "draft",
+      status: args.status || "draft",
       conditions: args.conditions || [],
       baseOutput: args.baseOutput,
       mergeStrategies: args.mergeStrategies,

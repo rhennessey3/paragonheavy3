@@ -42,6 +42,7 @@ import {
 import { Id } from "@/convex/_generated/dataModel";
 import { type PolicyType, POLICY_TYPES } from "@/lib/compliance";
 import { toast } from "sonner";
+import { JurisdictionSelectDialog } from "@/components/compliance/JurisdictionSelectDialog";
 
 const policyIcons: Record<PolicyType, React.ReactNode> = {
   escort: <Car className="h-5 w-5" />,
@@ -74,6 +75,7 @@ export default function PoliciesPage() {
   const [selectedJurisdiction, setSelectedJurisdiction] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showJurisdictionDialog, setShowJurisdictionDialog] = useState(false);
 
   // Fetch jurisdictions
   const jurisdictions = useQuery(api.compliance.getJurisdictions, { type: "state" });
@@ -174,7 +176,7 @@ export default function PoliciesPage() {
             <GitBranch className="h-4 w-4 mr-2" />
             View Graph
           </Button>
-          <Button onClick={() => router.push("/dashboard/compliance/policies/new")}>
+          <Button onClick={() => setShowJurisdictionDialog(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Policy
           </Button>
@@ -247,7 +249,7 @@ export default function PoliciesPage() {
                 ? "Try adjusting your filters"
                 : "Create your first compliance policy to get started"}
             </p>
-            <Button onClick={() => router.push("/dashboard/compliance/policies/new")}>
+            <Button onClick={() => setShowJurisdictionDialog(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Create Policy
             </Button>
@@ -367,6 +369,16 @@ export default function PoliciesPage() {
           })}
         </div>
       )}
+
+      {/* Jurisdiction Selection Dialog */}
+      <JurisdictionSelectDialog
+        open={showJurisdictionDialog}
+        onOpenChange={setShowJurisdictionDialog}
+        jurisdictions={jurisdictions}
+        onSelect={(jurisdictionId) => {
+          router.push(`/dashboard/compliance/graph?jurisdiction=${jurisdictionId}`);
+        }}
+      />
     </div>
   );
 }

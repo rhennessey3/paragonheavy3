@@ -420,7 +420,7 @@ export function NodePalette({
               <div className="space-y-1">
                 <DraggableItem
                   type="value"
-                  data={{ valueType: "number", value: 0 }}
+                  data={{ valueType: "number", value: 0, useFeetInches: true, feet: 0, inches: 0 }}
                 >
                   <div className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs bg-green-100 text-green-700 border border-transparent hover:border-green-300 transition-colors">
                     <Hash className="h-3 w-3" />
