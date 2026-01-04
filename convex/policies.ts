@@ -41,10 +41,19 @@ export const createPolicy = mutation({
       v.literal("draft"),
       v.literal("published")
     )),
+    conditionLogic: v.optional(v.union(
+      v.literal("AND"),
+      v.literal("OR")
+    )),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
     const now = Date.now();
+
+    // Validate: published policies must have at least one condition
+    if (args.status === "published" && (!args.conditions || args.conditions.length === 0)) {
+      throw new Error("Cannot publish a policy without conditions. Add at least one condition or save as draft.");
+    }
 
     const policyId = await ctx.db.insert("compliancePolicies", {
       jurisdictionId: args.jurisdictionId,
@@ -53,6 +62,7 @@ export const createPolicy = mutation({
       description: args.description,
       status: args.status || "draft",
       conditions: args.conditions || [],
+      conditionLogic: args.conditionLogic,
       baseOutput: args.baseOutput,
       mergeStrategies: args.mergeStrategies,
       effectiveFrom: args.effectiveFrom,
@@ -89,6 +99,10 @@ export const updatePolicy = mutation({
     mergeStrategies: v.optional(v.any()),
     effectiveFrom: v.optional(v.number()),
     effectiveTo: v.optional(v.number()),
+    conditionLogic: v.optional(v.union(
+      v.literal("AND"),
+      v.literal("OR")
+    )),
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
@@ -126,6 +140,17 @@ export const updatePolicyStatus = mutation({
   },
   handler: async (ctx, args) => {
     const session = await requireAuthSession(ctx);
+
+    // Validate: cannot publish without conditions
+    if (args.status === "published") {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy) {
+        throw new Error("Policy not found");
+      }
+      if (!policy.conditions || policy.conditions.length === 0) {
+        throw new Error("Cannot publish a policy without conditions. Add at least one condition first.");
+      }
+    }
 
     await ctx.db.patch(args.policyId, {
       status: args.status,

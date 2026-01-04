@@ -99,6 +99,7 @@ export default function PolicyGraphPage() {
       name: policyData.name!,
       description: policyData.description,
       conditions: policyData.conditions,
+      conditionLogic: policyData.conditionLogic,
       baseOutput: policyData.baseOutput,
       mergeStrategies: policyData.mergeStrategies,
       status: policyData.status,
@@ -114,6 +115,7 @@ export default function PolicyGraphPage() {
       name: updates.name,
       description: updates.description,
       conditions: updates.conditions,
+      conditionLogic: updates.conditionLogic,
       baseOutput: updates.baseOutput,
       mergeStrategies: updates.mergeStrategies,
     });
@@ -267,6 +269,7 @@ export default function PolicyGraphPage() {
     description: policy.description,
     status: policy.status as "draft" | "published" | "archived",
     conditions: policy.conditions || [],
+    conditionLogic: policy.conditionLogic as "AND" | "OR" | undefined,
     baseOutput: policy.baseOutput,
     mergeStrategies: policy.mergeStrategies,
     createdBy: policy.createdBy,

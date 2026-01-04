@@ -57,3 +57,30 @@
 /* AG Grid Styles - Legacy CSS-based theming */
 @import "ag-grid-community/styles/ag-grid.css";
 @import "ag-grid-community/styles/ag-theme-quartz.css";
+
+/* React Flow edge reconnection handle styles */
+.react-flow__edgeupdater {
+  cursor: grab;
+  /* Make the hitbox larger and visible on hover */
+  width: 20px !important;
+  height: 20px !important;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.react-flow__edgeupdater:hover {
+  opacity: 1;
+  transform: scale(1.3);
+}
+
+.react-flow__edgeupdater:active {
+  cursor: grabbing;
+}
+
+/* Style the visible handle circle */
+.react-flow__edgeupdater circle {
+  fill: #6366f1;
+  stroke: white;
+  stroke-width: 2;
+  r: 8;
+}

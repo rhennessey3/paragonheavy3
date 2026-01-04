@@ -21,9 +21,12 @@ export type RuleAttribute =
   | 'on_bridge' | 'urban_area' | 'time_of_day'
   | 'min_speed_capable_mph' | 'has_police_escort';
 
-export type ConditionOperator = 
+export type ConditionOperator =
   | '>' | '>=' | '<' | '<=' | '=' | '!='
   | 'between' | 'in' | 'not_in';
+
+// Logical operator for combining conditions
+export type LogicalOperator = 'AND' | 'OR';
 
 // Single condition in an IF clause
 export interface RuleConditionClause {
@@ -101,7 +104,8 @@ export interface PermitRequirement {
 
 // Complete IF/THEN rule structure
 export interface IfThenRule {
-  conditions: RuleConditionClause[];  // IF (all must match - AND logic)
+  conditions: RuleConditionClause[];  // IF clauses
+  conditionLogic?: LogicalOperator;   // How to combine conditions (default: AND)
   requirement: EscortRequirement | UtilityNoticeRequirement | PermitRequirement;     // THEN
   requirementType: 'escort' | 'utility_notice' | 'permit_requirement';  // Which type of requirement
   priority?: number;                  // For tie-breaking
@@ -111,6 +115,7 @@ export interface IfThenRule {
 export interface AttributeConfig {
   value: RuleAttribute;
   label: string;
+  description: string;
   type: 'number' | 'enum' | 'boolean';
   unit?: string;
   options?: { value: string; label: string }[];
@@ -118,24 +123,25 @@ export interface AttributeConfig {
 
 // Available attributes for rule conditions
 export const RULE_ATTRIBUTES: AttributeConfig[] = [
-  { value: 'height_ft', label: 'Height', type: 'number', unit: 'ft' },
-  { value: 'width_ft', label: 'Width', type: 'number', unit: 'ft' },
-  { value: 'length_ft', label: 'Load Length', type: 'number', unit: 'ft' },
-  { value: 'combined_length_ft', label: 'Combined Length (Vehicle + Load)', type: 'number', unit: 'ft' },
-  { value: 'front_overhang_ft', label: 'Front Overhang', type: 'number', unit: 'ft' },
-  { value: 'rear_overhang_ft', label: 'Rear Overhang', type: 'number', unit: 'ft' },
-  { value: 'left_overhang_ft', label: 'Left Overhang (Driver Side)', type: 'number', unit: 'ft' },
-  { value: 'right_overhang_ft', label: 'Right Overhang (Passenger Side)', type: 'number', unit: 'ft' },
-  { value: 'gross_weight_lbs', label: 'Gross Weight', type: 'number', unit: 'lbs' },
-  { value: 'axle_weight_lbs', label: 'Axle Weight', type: 'number', unit: 'lbs' },
-  { value: 'number_of_axles', label: 'Number of Axles', type: 'number', unit: 'axles' },
-  { value: 'axle_spacing_ft', label: 'Axle Spacing', type: 'number', unit: 'ft' },
-  { value: 'min_speed_capable_mph', label: 'Min Speed Capable', type: 'number', unit: 'mph' },
-  { value: 'speed_limit_mph', label: 'Road Speed Limit', type: 'number', unit: 'mph' },
-  { 
-    value: 'road_type', 
-    label: 'Road Type', 
-    type: 'enum', 
+  { value: 'height_ft', label: 'Height', description: 'Vertical clearance from ground to highest point of the load', type: 'number', unit: 'ft' },
+  { value: 'width_ft', label: 'Width', description: 'Total width of the load including any side overhang', type: 'number', unit: 'ft' },
+  { value: 'length_ft', label: 'Load Length', description: 'Length of the load being transported', type: 'number', unit: 'ft' },
+  { value: 'combined_length_ft', label: 'Combined Length (Vehicle + Load)', description: 'Total length of vehicle plus load from front bumper to rear', type: 'number', unit: 'ft' },
+  { value: 'front_overhang_ft', label: 'Front Overhang', description: 'Distance load extends beyond front of vehicle', type: 'number', unit: 'ft' },
+  { value: 'rear_overhang_ft', label: 'Rear Overhang', description: 'Distance load extends beyond rear of vehicle', type: 'number', unit: 'ft' },
+  { value: 'left_overhang_ft', label: 'Left Overhang (Driver Side)', description: 'Distance load extends beyond left side of vehicle', type: 'number', unit: 'ft' },
+  { value: 'right_overhang_ft', label: 'Right Overhang (Passenger Side)', description: 'Distance load extends beyond right side of vehicle', type: 'number', unit: 'ft' },
+  { value: 'gross_weight_lbs', label: 'Gross Weight', description: 'Total weight of vehicle plus load', type: 'number', unit: 'lbs' },
+  { value: 'axle_weight_lbs', label: 'Axle Weight', description: 'Weight distributed per axle', type: 'number', unit: 'lbs' },
+  { value: 'number_of_axles', label: 'Number of Axles', description: 'Total count of axles on the vehicle', type: 'number', unit: 'axles' },
+  { value: 'axle_spacing_ft', label: 'Axle Spacing', description: 'Distance between axles', type: 'number', unit: 'ft' },
+  { value: 'min_speed_capable_mph', label: 'Min Speed Capable', description: 'Minimum speed the loaded vehicle can maintain', type: 'number', unit: 'mph' },
+  { value: 'speed_limit_mph', label: 'Road Speed Limit', description: 'Posted speed limit of the road being traveled', type: 'number', unit: 'mph' },
+  {
+    value: 'road_type',
+    label: 'Road Type',
+    description: 'Classification of the road being traveled',
+    type: 'enum',
     options: [
       { value: 'two_lane', label: 'Two Lane' },
       { value: 'multi_lane', label: 'Multi Lane' },
@@ -143,9 +149,10 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'all', label: 'All Roads' },
     ]
   },
-  { 
-    value: 'num_lanes_same_direction', 
-    label: 'Lanes (Same Direction)', 
+  {
+    value: 'num_lanes_same_direction',
+    label: 'Lanes (Same Direction)',
+    description: 'Number of lanes traveling in the same direction',
     type: 'enum',
     options: [
       { value: '1', label: '1 Lane' },
@@ -154,9 +161,10 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: '4+', label: '4+ Lanes' },
     ]
   },
-  { 
-    value: 'travel_heading', 
-    label: 'Travel Direction', 
+  {
+    value: 'travel_heading',
+    label: 'Travel Direction',
+    description: 'Compass direction of travel',
     type: 'enum',
     options: [
       { value: 'N', label: 'North' },
@@ -169,9 +177,10 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'NW', label: 'Northwest' },
     ]
   },
-  { 
-    value: 'highway_type', 
-    label: 'Highway Type', 
+  {
+    value: 'highway_type',
+    label: 'Highway Type',
+    description: 'Federal, state, or local road classification',
     type: 'enum',
     options: [
       { value: 'interstate', label: 'Interstate' },
@@ -181,10 +190,11 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'local_road', label: 'Local Road' },
     ]
   },
-  { 
-    value: 'permit_type', 
-    label: 'Permit Type', 
-    type: 'enum', 
+  {
+    value: 'permit_type',
+    label: 'Permit Type',
+    description: 'Type of permit required for the load',
+    type: 'enum',
     options: [
       { value: 'oversize', label: 'Oversize' },
       { value: 'overweight', label: 'Overweight' },
@@ -192,19 +202,21 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'superload', label: 'Superload' },
     ]
   },
-  { 
-    value: 'time_of_day', 
-    label: 'Time of Day', 
-    type: 'enum', 
+  {
+    value: 'time_of_day',
+    label: 'Time of Day',
+    description: 'Time period when travel occurs',
+    type: 'enum',
     options: [
       { value: 'day', label: 'Daytime' },
       { value: 'night', label: 'Nighttime' },
       { value: 'all', label: 'Any Time' },
     ]
   },
-  { 
-    value: 'vehicle_classification', 
-    label: 'Vehicle Classification', 
+  {
+    value: 'vehicle_classification',
+    label: 'Vehicle Classification',
+    description: 'Category of vehicle or equipment being transported',
     type: 'enum',
     options: [
       { value: 'mobile_home', label: 'Mobile Home' },
@@ -216,14 +228,14 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
       { value: 'other', label: 'Other' },
     ]
   },
-  { value: 'on_bridge', label: 'On Bridge', type: 'boolean' },
-  { value: 'urban_area', label: 'Urban Area', type: 'boolean' },
-  { value: 'on_restricted_route', label: 'On Restricted Route', type: 'boolean' },
-  { value: 'is_mobile_home', label: 'Is Mobile Home', type: 'boolean' },
-  { value: 'is_modular_housing', label: 'Is Modular Housing', type: 'boolean' },
-  { value: 'is_superload', label: 'Is Superload', type: 'boolean' },
-  { value: 'is_construction_equipment', label: 'Is Construction Equipment', type: 'boolean' },
-  { value: 'has_police_escort', label: 'Has Police Escort', type: 'boolean' },
+  { value: 'on_bridge', label: 'On Bridge', description: 'Whether the route crosses any bridges', type: 'boolean' },
+  { value: 'urban_area', label: 'Urban Area', description: 'Whether traveling through an urban/city area', type: 'boolean' },
+  { value: 'on_restricted_route', label: 'On Restricted Route', description: 'Whether on a route with special restrictions', type: 'boolean' },
+  { value: 'is_mobile_home', label: 'Is Mobile Home', description: 'Load is classified as a mobile home', type: 'boolean' },
+  { value: 'is_modular_housing', label: 'Is Modular Housing', description: 'Load is classified as modular housing', type: 'boolean' },
+  { value: 'is_superload', label: 'Is Superload', description: 'Load exceeds superload thresholds', type: 'boolean' },
+  { value: 'is_construction_equipment', label: 'Is Construction Equipment', description: 'Load is construction equipment', type: 'boolean' },
+  { value: 'has_police_escort', label: 'Has Police Escort', description: 'Whether police escort is present', type: 'boolean' },
 ];
 
 // Operators available for each attribute type
@@ -674,7 +686,10 @@ export interface CompliancePolicy {
   
   // Conditions that trigger this policy
   conditions: PolicyCondition[];
-  
+
+  // How to combine conditions: AND (all must match) or OR (any must match)
+  conditionLogic?: LogicalOperator;  // Default: AND
+
   // Base output when any condition matches (conditions can add to this)
   baseOutput?: PolicyOutput;
   
@@ -812,6 +827,93 @@ export function isPolicyOutputType<T extends PolicyOutput>(
     default:
       return false;
   }
+}
+
+// =============================================================================
+// Condition Evaluation Functions
+// =============================================================================
+
+/**
+ * Evaluate a single condition against a load's attribute value
+ */
+export function evaluateCondition(
+  operator: ConditionOperator,
+  conditionValue: number | string | boolean | [number, number] | string[],
+  actualValue: number | string | boolean | undefined
+): boolean {
+  if (actualValue === undefined) return false;
+
+  switch (operator) {
+    case '>':
+      return typeof actualValue === 'number' && typeof conditionValue === 'number' && actualValue > conditionValue;
+    case '>=':
+      return typeof actualValue === 'number' && typeof conditionValue === 'number' && actualValue >= conditionValue;
+    case '<':
+      return typeof actualValue === 'number' && typeof conditionValue === 'number' && actualValue < conditionValue;
+    case '<=':
+      return typeof actualValue === 'number' && typeof conditionValue === 'number' && actualValue <= conditionValue;
+    case '=':
+      return actualValue === conditionValue;
+    case '!=':
+      return actualValue !== conditionValue;
+    case 'between':
+      if (typeof actualValue === 'number' && Array.isArray(conditionValue) && conditionValue.length === 2) {
+        const [min, max] = conditionValue;
+        return actualValue >= min && actualValue <= max;
+      }
+      return false;
+    case 'in':
+      if (Array.isArray(conditionValue)) {
+        return conditionValue.includes(actualValue as string);
+      }
+      return false;
+    case 'not_in':
+      if (Array.isArray(conditionValue)) {
+        return !conditionValue.includes(actualValue as string);
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Evaluate all conditions in a policy against a load's attributes.
+ * Uses conditionLogic to determine AND/OR evaluation.
+ */
+export function evaluatePolicyConditions(
+  conditions: PolicyCondition[],
+  loadAttributes: Partial<Record<RuleAttribute, number | string | boolean>>,
+  conditionLogic: LogicalOperator = 'AND'
+): boolean {
+  if (conditions.length === 0) return false;
+
+  const results = conditions.map(condition => {
+    const actualValue = loadAttributes[condition.attribute];
+    return evaluateCondition(condition.operator, condition.value, actualValue);
+  });
+
+  if (conditionLogic === 'OR') {
+    // Any condition must match
+    return results.some(result => result);
+  } else {
+    // All conditions must match (AND - default)
+    return results.every(result => result);
+  }
+}
+
+/**
+ * Check if a policy matches the given load attributes
+ */
+export function policyMatchesLoad(
+  policy: CompliancePolicy,
+  loadAttributes: Partial<Record<RuleAttribute, number | string | boolean>>
+): boolean {
+  return evaluatePolicyConditions(
+    policy.conditions,
+    loadAttributes,
+    policy.conditionLogic || 'AND'
+  );
 }
 
 // =============================================================================

@@ -424,7 +424,10 @@ export default defineSchema({
       // The output this specific condition contributes
       output: v.optional(v.any()),              // Partial output when this condition matches
     })),
-    
+
+    // How to combine conditions: AND (all must match) or OR (any must match)
+    conditionLogic: v.optional(v.union(v.literal("AND"), v.literal("OR"))),
+
     // Default/base output for the policy (applied when any condition matches)
     baseOutput: v.optional(v.any()),
     

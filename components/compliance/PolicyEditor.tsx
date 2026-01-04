@@ -31,6 +31,7 @@ import {
   MapPin,
   Zap,
   Ruler,
+  AlertTriangle,
 } from "lucide-react";
 
 import { ConditionRow } from "./ConditionRow";
@@ -46,6 +47,7 @@ import {
   type EscortRequirement,
   type PermitRequirement,
   type UtilityNoticeRequirement,
+  type LogicalOperator,
   POLICY_TYPES,
   MERGE_STRATEGIES,
   RULE_ATTRIBUTES,
@@ -91,6 +93,9 @@ export function PolicyEditor({
   const [mergeStrategies, setMergeStrategies] = useState<Record<string, MergeStrategy>>(
     policy?.mergeStrategies || getDefaultMergeStrategiesForPolicyType(policyType)
   );
+  const [conditionLogic, setConditionLogic] = useState<LogicalOperator>(
+    policy?.conditionLogic || "AND"
+  );
   const [activeTab, setActiveTab] = useState<"conditions" | "output" | "merge">("conditions");
   const [expandedCondition, setExpandedCondition] = useState<string | null>(null);
 
@@ -128,10 +133,11 @@ export function PolicyEditor({
       name,
       description,
       conditions,
+      conditionLogic,
       baseOutput,
       mergeStrategies,
     });
-  }, [policy, policyType, name, description, conditions, baseOutput, mergeStrategies, onSave]);
+  }, [policy, policyType, name, description, conditions, conditionLogic, baseOutput, mergeStrategies, onSave]);
 
   // Render output editor based on policy type
   const renderOutputEditor = () => {
@@ -333,9 +339,36 @@ export function PolicyEditor({
           {/* Conditions Tab */}
           <TabsContent value="conditions" className="space-y-3 mt-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">
-                Add conditions that trigger this policy
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-gray-500">
+                  Match
+                </p>
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setConditionLogic("AND")}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      conditionLogic === "AND"
+                        ? "bg-white shadow-sm text-blue-700"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    ALL (AND)
+                  </button>
+                  <button
+                    onClick={() => setConditionLogic("OR")}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      conditionLogic === "OR"
+                        ? "bg-white shadow-sm text-orange-700"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    ANY (OR)
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  conditions
+                </p>
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -348,10 +381,11 @@ export function PolicyEditor({
             </div>
 
             {conditions.length === 0 ? (
-              <Card className="p-6 text-center border-dashed">
-                <p className="text-gray-500 text-sm mb-2">No conditions defined</p>
-                <p className="text-xs text-gray-400 mb-3">
-                  Conditions determine when this policy applies
+              <Card className="p-6 text-center border-dashed border-amber-300 bg-amber-50">
+                <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
+                <p className="text-amber-700 text-sm font-medium mb-1">No conditions defined</p>
+                <p className="text-xs text-amber-600 mb-3">
+                  Policies without conditions cannot be published. Add at least one condition to make this policy functional.
                 </p>
                 <Button variant="outline" size="sm" onClick={addCondition}>
                   <Plus className="h-3 w-3 mr-1" />
@@ -361,8 +395,22 @@ export function PolicyEditor({
             ) : (
               <div className="space-y-2">
                 {conditions.map((condition, index) => (
+                  <div key={condition.id}>
+                    {index > 0 && (
+                      <div className="flex justify-center py-1">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${
+                            conditionLogic === "OR"
+                              ? "border-orange-300 text-orange-600 bg-orange-50"
+                              : "border-blue-300 text-blue-600 bg-blue-50"
+                          }`}
+                        >
+                          {conditionLogic}
+                        </Badge>
+                      </div>
+                    )}
                   <Card
-                    key={condition.id}
                     className={`transition-all ${
                       expandedCondition === condition.id ? "ring-2 ring-blue-200" : ""
                     }`}
@@ -452,6 +500,7 @@ export function PolicyEditor({
                       </div>
                     )}
                   </Card>
+                  </div>
                 ))}
               </div>
             )}

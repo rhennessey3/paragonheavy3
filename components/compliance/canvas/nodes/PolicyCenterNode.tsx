@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, Shield, Settings, FileText, Merge, Save, Sparkles, Car, Gauge, Clock, MapPin, Zap, Ruler, Send, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Shield, Settings, FileText, Merge, Save, Sparkles, Car, Gauge, Clock, MapPin, Zap, Ruler, Send, Loader2, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type PolicyType, POLICY_TYPES } from "@/lib/compliance";
 
 export interface PolicyCenterNodeData {
@@ -35,6 +36,8 @@ export interface PolicyCenterNodeData {
   isPublishing?: boolean;
   /** Number of connected conditions */
   conditionCount?: number;
+  /** How to combine conditions: AND (all must match) or OR (any must match) */
+  conditionLogic?: "AND" | "OR";
 }
 
 // Policy icon mapping
@@ -150,10 +153,51 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
                   {data.status || "draft"}
                 </Badge>
               )}
-              {data.conditionCount !== undefined && data.conditionCount > 0 && (
-                <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-white/50">
-                  {data.conditionCount} condition{data.conditionCount !== 1 ? "s" : ""}
+              {data.conditionCount !== undefined && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] h-4 px-1.5 ${
+                    data.conditionCount === 0
+                      ? "bg-amber-50 text-amber-600 border-amber-300"
+                      : "bg-white/50"
+                  }`}
+                >
+                  {data.conditionCount === 0
+                    ? "No conditions"
+                    : `${data.conditionCount} condition${data.conditionCount !== 1 ? "s" : ""}`
+                  }
                 </Badge>
+              )}
+              {/* AND/OR Logic Toggle - show when conditions exist */}
+              {(data.conditionCount ?? 0) > 0 && (
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateData({ conditionLogic: "AND" });
+                    }}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
+                      (data.conditionLogic || "AND") === "AND"
+                        ? "bg-white shadow-sm text-blue-700"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    AND
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateData({ conditionLogic: "OR" });
+                    }}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
+                      data.conditionLogic === "OR"
+                        ? "bg-white shadow-sm text-orange-700"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    OR
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -327,19 +371,36 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
               <span>Policy</span>
             </div>
             {data.status === "draft" && data.onPublish && (
-              <Button
-                size="sm"
-                className="h-7 text-xs bg-green-600 hover:bg-green-700"
-                onClick={data.onPublish}
-                disabled={data.isPublishing}
-              >
-                {data.isPublishing ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <Send className="h-3 w-3 mr-1" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      className={`h-7 text-xs ${
+                        data.conditionCount === 0
+                          ? "bg-gray-400 cursor-not-allowed"
+                          : "bg-green-600 hover:bg-green-700"
+                      }`}
+                      onClick={data.onPublish}
+                      disabled={data.isPublishing || data.conditionCount === 0}
+                    >
+                      {data.isPublishing ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : data.conditionCount === 0 ? (
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                      ) : (
+                        <Send className="h-3 w-3 mr-1" />
+                      )}
+                      {data.isPublishing ? "Publishing..." : "Publish"}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {data.conditionCount === 0 && (
+                  <TooltipContent>
+                    <p>Add conditions before publishing</p>
+                  </TooltipContent>
                 )}
-                {data.isPublishing ? "Publishing..." : "Publish"}
-              </Button>
+              </Tooltip>
             )}
           </div>
         )}

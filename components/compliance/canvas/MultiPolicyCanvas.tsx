@@ -10,6 +10,7 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
+  reconnectEdge,
   type Connection,
   type Edge,
   type Node,
@@ -42,6 +43,7 @@ import { OperatorNode } from "./nodes/OperatorNode";
 import { ValueNode } from "./nodes/ValueNode";
 import { OutputNode } from "./nodes/OutputNode";
 import { PolicyCenterNode, type PolicyCenterNodeData } from "./nodes/PolicyCenterNode";
+import { ConditionLogicNode, type ConditionLogicNodeData } from "./nodes/ConditionLogicNode";
 import { SaveOptionsDialog } from "./SaveOptionsDialog";
 import {
   type CompliancePolicy,
@@ -54,6 +56,7 @@ const nodeTypes = {
   attribute: AttributeNode,
   operator: OperatorNode,
   value: ValueNode,
+  conditionLogic: ConditionLogicNode,
   output: OutputNode,
   policyCenter: PolicyCenterNode,
 };
@@ -62,7 +65,8 @@ const nodeTypes = {
 const PORT_COMPATIBILITY: Record<string, string[]> = {
   attribute: ["operator"],
   operator: ["value"],
-  value: ["output"],
+  value: ["output", "conditionLogic"],
+  conditionLogic: ["output"],
   output: ["policyCenter"],
 };
 
@@ -70,6 +74,7 @@ const PORT_COMPATIBILITY: Record<string, string[]> = {
 const defaultEdgeOptions = {
   type: "smoothstep",
   animated: true,
+  reconnectable: true,
   style: { stroke: "#6366f1", strokeWidth: 2 },
   markerEnd: {
     type: MarkerType.ArrowClosed,
@@ -223,6 +228,7 @@ export function MultiPolicyCanvas({
           status: policy.status,
           baseOutput: policy.baseOutput,
           mergeStrategies: policy.mergeStrategies,
+          conditionLogic: policy.conditionLogic,
           isNew: false,
           conditionCount: policy.conditions?.length || 0,
         } as PolicyCenterNodeData,
@@ -529,6 +535,34 @@ export function MultiPolicyCanvas({
     [nodes, onPositionsChange]
   );
 
+  // Count conditions connected to a policy node (for validation)
+  const countConnectedConditions = useCallback((nodeId: string): number => {
+    const currentEdges = edgesRef.current;
+    const currentNodes = nodesRef.current;
+
+    let count = 0;
+    const outputEdges = currentEdges.filter(e => e.target === nodeId);
+
+    for (const outputEdge of outputEdges) {
+      const outputNode = currentNodes.find(n => n.id === outputEdge.source && n.type === "output");
+      if (!outputNode) continue;
+      const valueEdge = currentEdges.find(e => e.target === outputNode.id);
+      if (!valueEdge) continue;
+      const valueNode = currentNodes.find(n => n.id === valueEdge.source && n.type === "value");
+      if (!valueNode) continue;
+      const operatorEdge = currentEdges.find(e => e.target === valueNode.id);
+      if (!operatorEdge) continue;
+      const operatorNode = currentNodes.find(n => n.id === operatorEdge.source && n.type === "operator");
+      if (!operatorNode) continue;
+      const attributeEdge = currentEdges.find(e => e.target === operatorNode.id);
+      if (!attributeEdge) continue;
+      const attributeNode = currentNodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
+      if (attributeNode) count++;
+    }
+
+    return count;
+  }, []);
+
   // Save a new policy - defined early so it can be used in useEffects
   const handleSaveNewPolicy = useCallback(async (nodeId: string, status: "draft" | "published" = "draft") => {
     // Use refs to get current nodes/edges (refs are always up-to-date)
@@ -587,6 +621,17 @@ export function MultiPolicyCanvas({
       });
     }
 
+    // Validate conditions for publish
+    if (status === "published" && conditions.length === 0) {
+      toast.error("Cannot publish a policy with no conditions. Add at least one condition or save as draft.");
+      return;
+    }
+
+    // Warn on draft with no conditions (non-blocking)
+    if (status === "draft" && conditions.length === 0) {
+      toast.warning("Saving draft with no conditions. This policy won't be functional until conditions are added.");
+    }
+
     setSavingPolicies(prev => new Set(prev).add(nodeId));
 
     try {
@@ -596,6 +641,7 @@ export function MultiPolicyCanvas({
         name: policyData.name,
         description: policyData.description,
         conditions,
+        conditionLogic: policyData.conditionLogic,
         baseOutput: policyData.baseOutput,
         mergeStrategies: policyData.mergeStrategies,
         status,
@@ -669,6 +715,13 @@ export function MultiPolicyCanvas({
   // Handler for publishing a draft policy
   const handlePublishPolicy = useCallback(async (nodeId: string, policyId: string) => {
     if (!onPublishPolicy) return;
+
+    // Count connected conditions before publishing
+    const conditionCount = countConnectedConditions(nodeId);
+    if (conditionCount === 0) {
+      toast.error("Cannot publish a policy with no conditions. Connect at least one condition first.");
+      return;
+    }
 
     setPublishingPolicies(prev => new Set(prev).add(nodeId));
 
@@ -764,6 +817,18 @@ export function MultiPolicyCanvas({
     [setEdges, isValidConnection, recordHistory]
   );
 
+  // Handle edge reconnection (dragging endpoint to a new node)
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      if (isValidConnection(newConnection)) {
+        recordHistory();
+        setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+        setHasUnsavedChanges(true);
+      }
+    },
+    [setEdges, isValidConnection, recordHistory]
+  );
+
   // Handle dropping new nodes from palette
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -829,48 +894,74 @@ export function MultiPolicyCanvas({
     [reactFlowInstance, setNodes, jurisdictionId, recordHistory]
   );
 
+  // Helper to trace from value node back to attribute
+  const traceConditionChain = useCallback((valueNodeId: string, outputData?: any): PolicyCondition | null => {
+    const valueNode = nodes.find(n => n.id === valueNodeId && n.type === "value");
+    if (!valueNode) return null;
+
+    const operatorEdge = edges.find(e => e.target === valueNode.id);
+    if (!operatorEdge) return null;
+    const operatorNode = nodes.find(n => n.id === operatorEdge.source && n.type === "operator");
+    if (!operatorNode) return null;
+
+    const attributeEdge = edges.find(e => e.target === operatorNode.id);
+    if (!attributeEdge) return null;
+    const attributeNode = nodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
+    if (!attributeNode) return null;
+
+    return {
+      id: attributeNode.data.id || generateId(),
+      attribute: attributeNode.data.attribute,
+      operator: operatorNode.data.operator,
+      value: valueNode.data.value,
+      sourceRegulation: attributeNode.data.sourceRegulation,
+      notes: attributeNode.data.notes,
+      output: outputData,
+    };
+  }, [nodes, edges]);
+
   // Serialize conditions for a specific policy node
   const serializeConditionsForPolicy = useCallback((policyNodeId: string): PolicyCondition[] => {
     const conditions: PolicyCondition[] = [];
-    
+
     // Find all output nodes connected to this policy
     const outputEdges = edges.filter(e => e.target === policyNodeId);
-    
+
     for (const outputEdge of outputEdges) {
       const outputNode = nodes.find(n => n.id === outputEdge.source && n.type === "output");
       if (!outputNode) continue;
 
-      // Trace back through the chain
-      const valueEdge = edges.find(e => e.target === outputNode.id);
-      if (!valueEdge) continue;
-      const valueNode = nodes.find(n => n.id === valueEdge.source && n.type === "value");
-      if (!valueNode) continue;
+      // Check what's connected to the output node
+      const toOutputEdge = edges.find(e => e.target === outputNode.id);
+      if (!toOutputEdge) continue;
 
-      const operatorEdge = edges.find(e => e.target === valueNode.id);
-      if (!operatorEdge) continue;
-      const operatorNode = nodes.find(n => n.id === operatorEdge.source && n.type === "operator");
-      if (!operatorNode) continue;
+      const sourceNode = nodes.find(n => n.id === toOutputEdge.source);
+      if (!sourceNode) continue;
 
-      const attributeEdge = edges.find(e => e.target === operatorNode.id);
-      if (!attributeEdge) continue;
-      const attributeNode = nodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
-      if (!attributeNode) continue;
+      // Handle conditionLogic node
+      if (sourceNode.type === "conditionLogic") {
+        const logicNode = sourceNode;
 
-      const condition: PolicyCondition = {
-        id: attributeNode.data.id || generateId(),
-        attribute: attributeNode.data.attribute,
-        operator: operatorNode.data.operator,
-        value: valueNode.data.value,
-        sourceRegulation: attributeNode.data.sourceRegulation,
-        notes: attributeNode.data.notes,
-        output: outputNode.data.output,
-      };
+        // Find all value nodes connected to this logic node
+        const valueEdges = edges.filter(e => e.target === logicNode.id);
 
-      conditions.push(condition);
+        for (const valueEdge of valueEdges) {
+          const condition = traceConditionChain(valueEdge.source, outputNode.data.output);
+          if (condition) {
+            conditions.push(condition);
+          }
+        }
+      } else if (sourceNode.type === "value") {
+        // Direct value → output connection (existing behavior)
+        const condition = traceConditionChain(sourceNode.id, outputNode.data.output);
+        if (condition) {
+          conditions.push(condition);
+        }
+      }
     }
 
     return conditions;
-  }, [nodes, edges]);
+  }, [nodes, edges, traceConditionChain]);
 
   // Delete selected nodes
   const onDeleteSelected = useCallback(() => {
@@ -1094,6 +1185,7 @@ export function MultiPolicyCanvas({
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
             onInit={setReactFlowInstance}
             onDrop={onDrop}
             onDragOver={onDragOver}
@@ -1257,6 +1349,7 @@ export function MultiPolicyCanvas({
             ? (nodes.find(n => n.id === pendingSaveNodeId)?.data as PolicyCenterNodeData)?.name || "New Policy"
             : "New Policy"
         }
+        hasConditions={pendingSaveNodeId ? countConnectedConditions(pendingSaveNodeId) > 0 : false}
       />
     </div>
   );
