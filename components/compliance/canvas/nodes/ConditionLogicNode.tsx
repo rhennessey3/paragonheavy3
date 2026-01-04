@@ -47,7 +47,15 @@ export const ConditionLogicNode = memo(function ConditionLogicNode({
           type="target"
           position={Position.Top}
           className={`!w-3 !h-3 !border-2 !border-white ${isAnd ? "!bg-blue-500" : "!bg-orange-500"}`}
-          id="input"
+          id="input-top"
+        />
+
+        {/* Input Handle - receives from Value nodes (bottom) */}
+        <Handle
+          type="target"
+          position={Position.Bottom}
+          className={`!w-3 !h-3 !border-2 !border-white ${isAnd ? "!bg-blue-500" : "!bg-orange-500"}`}
+          id="input-bottom"
         />
 
         {/* Content */}
@@ -57,10 +65,10 @@ export const ConditionLogicNode = memo(function ConditionLogicNode({
           </span>
         </div>
 
-        {/* Output Handle - connects to Output (bottom) */}
+        {/* Output Handle - connects to Output (right side for left-to-right flow) */}
         <Handle
           type="source"
-          position={Position.Bottom}
+          position={Position.Right}
           className={`!w-3 !h-3 !border-2 !border-white ${isAnd ? "!bg-blue-500" : "!bg-orange-500"}`}
           id="output"
         />

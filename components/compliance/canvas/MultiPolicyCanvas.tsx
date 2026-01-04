@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Save, Trash2, Undo, Redo, Info, AlertCircle, LayoutGrid, FileText, Check, HelpCircle, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,12 +45,17 @@ import { ValueNode } from "./nodes/ValueNode";
 import { OutputNode } from "./nodes/OutputNode";
 import { PolicyCenterNode, type PolicyCenterNodeData } from "./nodes/PolicyCenterNode";
 import { ConditionLogicNode, type ConditionLogicNodeData } from "./nodes/ConditionLogicNode";
+import { MergeStrategyNode, type MergeStrategyNodeData } from "./nodes/MergeStrategyNode";
 import { SaveOptionsDialog } from "./SaveOptionsDialog";
 import {
   type CompliancePolicy,
   type PolicyType,
   type PolicyCondition,
 } from "@/lib/compliance";
+import {
+  type ConditionData,
+  generateConditionStatement,
+} from "@/lib/condition-statement";
 
 // Register custom node types
 const nodeTypes = {
@@ -58,6 +64,7 @@ const nodeTypes = {
   value: ValueNode,
   conditionLogic: ConditionLogicNode,
   output: OutputNode,
+  mergeStrategy: MergeStrategyNode,
   policyCenter: PolicyCenterNode,
 };
 
@@ -67,7 +74,8 @@ const PORT_COMPATIBILITY: Record<string, string[]> = {
   operator: ["value"],
   value: ["output", "conditionLogic"],
   conditionLogic: ["output"],
-  output: ["policyCenter"],
+  output: ["policyCenter", "mergeStrategy"],
+  mergeStrategy: ["policyCenter"],
 };
 
 // Edge styles
@@ -134,6 +142,12 @@ interface MultiPolicyCanvasProps {
   isSavingDraft?: boolean;
   /** Last saved timestamp for draft indicator */
   lastDraftSaved?: number;
+  /** Callback when creating a draft from a published policy */
+  onCreateDraftFromPublished?: (
+    sourcePolicyId: string,
+    conditions: PolicyCondition[],
+    conditionLogic?: "AND" | "OR"
+  ) => Promise<string>;
 }
 
 // Generate unique ID
@@ -166,13 +180,94 @@ export function MultiPolicyCanvas({
   onSaveDraft,
   isSavingDraft,
   lastDraftSaved,
+  onCreateDraftFromPublished,
 }: MultiPolicyCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [savingPolicies, setSavingPolicies] = useState<Set<string>>(new Set());
   const [publishingPolicies, setPublishingPolicies] = useState<Set<string>>(new Set());
+  const [deletingPolicies, setDeletingPolicies] = useState<Set<string>>(new Set());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  
+
+  // Delete confirmation dialog state
+  const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
+  const [pendingDeleteNodeId, setPendingDeleteNodeId] = useState<string | null>(null);
+  const [pendingDeletePolicyId, setPendingDeletePolicyId] = useState<string | null>(null);
+
+  // Track original edges for each published policy to detect changes
+  // Key: policyNodeId, Value: stringified edge data (source + sourceHandle + target + targetHandle)
+  const [originalPolicyEdges, setOriginalPolicyEdges] = useState<Map<string, Set<string>>>(new Map());
+
+  // Helper to collect all edges in a policy's subgraph (not just direct connections)
+  // This includes edges to output nodes and condition logic nodes connected to the policy
+  const collectPolicySubgraphEdges = useCallback((
+    policyNodeId: string,
+    allNodes: Node[],
+    allEdges: Edge[]
+  ): Set<string> => {
+    const edgeKeys = new Set<string>();
+    const visitedNodes = new Set<string>();
+    const nodesToVisit: string[] = [policyNodeId];
+
+    // BFS to collect all nodes in the policy's subgraph (traversing edges backwards)
+    while (nodesToVisit.length > 0) {
+      const currentNodeId = nodesToVisit.shift()!;
+      if (visitedNodes.has(currentNodeId)) continue;
+      visitedNodes.add(currentNodeId);
+
+      // Find all edges that target this node
+      allEdges.forEach((edge) => {
+        if (edge.target === currentNodeId) {
+          // Add the edge to our tracking set
+          edgeKeys.add(`${edge.source}|${edge.sourceHandle || ''}|${edge.target}|${edge.targetHandle || ''}`);
+
+          // Get the source node to decide if we should traverse further
+          const sourceNode = allNodes.find(n => n.id === edge.source);
+          if (sourceNode) {
+            // Only traverse further for output and conditionLogic nodes (part of policy subgraph)
+            // Stop at value, operator, and attribute nodes (they're leaf nodes of the subgraph)
+            if (sourceNode.type === "output" || sourceNode.type === "conditionLogic") {
+              nodesToVisit.push(sourceNode.id);
+            }
+          }
+        }
+      });
+    }
+
+    return edgeKeys;
+  }, []);
+
+  // Helper to collect all node IDs in a policy's subgraph (for deletion)
+  // This traverses backward from the policy node to find all connected nodes
+  const collectPolicySubgraphNodes = useCallback((
+    policyNodeId: string,
+    allNodes: Node[],
+    allEdges: Edge[]
+  ): string[] => {
+    const nodeIds: string[] = [policyNodeId];
+    const visitedNodes = new Set<string>([policyNodeId]);
+    const nodesToVisit: string[] = [policyNodeId];
+
+    // BFS traversal backward through edges
+    while (nodesToVisit.length > 0) {
+      const currentNodeId = nodesToVisit.shift()!;
+
+      // Find all edges that target this node (backward traversal)
+      allEdges.forEach((edge) => {
+        if (edge.target === currentNodeId) {
+          const sourceNode = allNodes.find(n => n.id === edge.source);
+          if (sourceNode && !visitedNodes.has(sourceNode.id)) {
+            visitedNodes.add(sourceNode.id);
+            nodeIds.push(sourceNode.id);
+            nodesToVisit.push(sourceNode.id);
+          }
+        }
+      });
+    }
+
+    return nodeIds;
+  }, []);
+
   // Draft saving state
   const [showSaveDraftDialog, setShowSaveDraftDialog] = useState(false);
   const [draftName, setDraftName] = useState(currentDraft?.name || "");
@@ -236,10 +331,56 @@ export function MultiPolicyCanvas({
 
       // Create condition chain nodes for each existing condition
       if (policy.conditions && policy.conditions.length > 0) {
+        const hasConditionLogic = policy.conditionLogic && policy.conditions.length > 1;
+        const spacing = 120;
+        const baseX = 100 + col * POLICY_SPACING_X - 400;
+
+        // If using conditionLogic (AND/OR), create a logic node and single output
+        let conditionLogicNodeId: string | null = null;
+        let sharedOutputId: string | null = null;
+
+        if (hasConditionLogic) {
+          // Create conditionLogic node
+          conditionLogicNodeId = `logic_${policy._id}`;
+          const logicBaseY = 200 + row * POLICY_SPACING_Y + CONDITION_OFFSET_Y + (policy.conditions.length - 1) * 40;
+          const defaultLogicPosition = { x: baseX + spacing * 3, y: logicBaseY };
+          nodes.push({
+            id: conditionLogicNodeId,
+            type: "conditionLogic",
+            position: getNodePosition(conditionLogicNodeId, defaultLogicPosition),
+            data: {
+              id: conditionLogicNodeId,
+              conditionLogic: policy.conditionLogic,
+              label: policy.conditionLogic === "AND" ? "All Match (AND)" : "Any Match (OR)",
+            } as ConditionLogicNodeData,
+          });
+
+          // Create shared output node
+          sharedOutputId = `out_${policy._id}_shared`;
+          const defaultOutputPosition = { x: baseX + spacing * 4, y: logicBaseY };
+          // Use the first condition's output as the shared output
+          const firstConditionOutput = policy.conditions[0]?.output || {};
+          nodes.push({
+            id: sharedOutputId,
+            type: "output",
+            position: getNodePosition(sharedOutputId, defaultOutputPosition),
+            data: {
+              id: `out_${policy._id}`,
+              outputType: policy.policyType,
+              label: `${policy.policyType} Output`,
+              output: firstConditionOutput,
+            },
+          });
+
+          // Connect logic node to output, output to policy
+          edges.push(
+            { id: `e_${conditionLogicNodeId}_${sharedOutputId}`, source: conditionLogicNodeId, target: sharedOutputId, ...defaultEdgeOptions },
+            { id: `e_${sharedOutputId}_${policyNodeId}`, source: sharedOutputId, target: policyNodeId, ...defaultEdgeOptions }
+          );
+        }
+
         policy.conditions.forEach((condition, condIndex) => {
-          const baseX = 100 + col * POLICY_SPACING_X - 400;
           const baseY = 200 + row * POLICY_SPACING_Y + CONDITION_OFFSET_Y + condIndex * 80;
-          const spacing = 120;
 
           // Attribute node
           const attrId = `attr_${policy._id}_${condition.id}`;
@@ -302,28 +443,41 @@ export function MultiPolicyCanvas({
             data: valueData,
           });
 
-          // Output node
-          const outId = `out_${policy._id}_${condition.id}`;
-          const defaultOutPosition = { x: baseX + spacing * 3, y: baseY };
-          nodes.push({
-            id: outId,
-            type: "output",
-            position: getNodePosition(outId, defaultOutPosition),
-            data: {
-              id: `out_${condition.id}`,
-              outputType: policy.policyType,
-              label: `${policy.policyType} Output`,
-              output: condition.output || {},
-            },
-          });
-
           // Create edges for the condition chain
           edges.push(
             { id: `e_${attrId}_${opId}`, source: attrId, target: opId, ...defaultEdgeOptions },
-            { id: `e_${opId}_${valId}`, source: opId, target: valId, ...defaultEdgeOptions },
-            { id: `e_${valId}_${outId}`, source: valId, target: outId, ...defaultEdgeOptions },
-            { id: `e_${outId}_${policyNodeId}`, source: outId, target: policyNodeId, ...defaultEdgeOptions }
+            { id: `e_${opId}_${valId}`, source: opId, target: valId, ...defaultEdgeOptions }
           );
+
+          if (hasConditionLogic && conditionLogicNodeId) {
+            // Connect value to conditionLogic node
+            edges.push({
+              id: `e_${valId}_${conditionLogicNodeId}`,
+              source: valId,
+              target: conditionLogicNodeId,
+              ...defaultEdgeOptions,
+            });
+          } else {
+            // No conditionLogic - create individual output node and connect directly
+            const outId = `out_${policy._id}_${condition.id}`;
+            const defaultOutPosition = { x: baseX + spacing * 3, y: baseY };
+            nodes.push({
+              id: outId,
+              type: "output",
+              position: getNodePosition(outId, defaultOutPosition),
+              data: {
+                id: `out_${condition.id}`,
+                outputType: policy.policyType,
+                label: `${policy.policyType} Output`,
+                output: condition.output || {},
+              },
+            });
+
+            edges.push(
+              { id: `e_${valId}_${outId}`, source: valId, target: outId, ...defaultEdgeOptions },
+              { id: `e_${outId}_${policyNodeId}`, source: outId, target: policyNodeId, ...defaultEdgeOptions }
+            );
+          }
         });
       }
     });
@@ -343,6 +497,24 @@ export function MultiPolicyCanvas({
     nodesRef.current = nodes;
     edgesRef.current = edges;
   }, [nodes, edges]);
+
+  // Memoized fingerprint of condition-related node data to trigger statement regeneration
+  // when values change (not just when edges change)
+  const conditionDataFingerprint = useMemo(() => {
+    const fingerprints: string[] = [];
+    nodes.forEach(node => {
+      if (node.type === "attribute" || node.type === "operator" || node.type === "value") {
+        // Include relevant data fields that affect the statement
+        const relevantData = {
+          attribute: node.data.attribute,
+          operator: node.data.operator,
+          value: node.data.value,
+        };
+        fingerprints.push(`${node.id}:${JSON.stringify(relevantData)}`);
+      }
+    });
+    return fingerprints.sort().join("|");
+  }, [nodes]);
 
   // History state for undo/redo
   const historyRef = useRef<{
@@ -444,18 +616,48 @@ export function MultiPolicyCanvas({
   // Track which policies we've initialized to avoid resetting user's work
   const initializedPoliciesRef = useRef<string>("");
 
+  // Track recently saved policies to prevent race condition with Convex query subscription
+  const recentlySavedPoliciesRef = useRef<Set<string>>(new Set());
+
   // Only re-initialize when the actual policy list changes (add/remove), not position updates
   const policyIds = useMemo(() => policies.map(p => p._id).sort().join(','), [policies]);
 
   useEffect(() => {
     // Only reset if the policy list actually changed
     if (initializedPoliciesRef.current !== policyIds) {
+      // Check if this change is due to a policy we just saved locally
+      // If so, skip reinitialization to prevent race condition with local state
+      const newPolicyIds = policies.map(p => p._id);
+      const hasRecentlySaved = newPolicyIds.some(id =>
+        recentlySavedPoliciesRef.current.has(id)
+      );
+
+      if (hasRecentlySaved) {
+        // Don't reset nodes - just update the ref to prevent future unnecessary resets
+        initializedPoliciesRef.current = policyIds;
+        return;
+      }
+
       setNodes(initialNodes.nodes);
       setEdges(initialNodes.edges);
       initializedPoliciesRef.current = policyIds;
+
+      // Initialize original edges for published policies (including full subgraph)
+      const originalEdgesMap = new Map<string, Set<string>>();
+      initialNodes.nodes.forEach((node) => {
+        if (node.type === "policyCenter") {
+          const data = node.data as PolicyCenterNodeData;
+          if (data.status === "published" && data._id) {
+            // Get all edges in the policy's subgraph (includes output and conditionLogic nodes)
+            const policyEdges = collectPolicySubgraphEdges(node.id, initialNodes.nodes, initialNodes.edges);
+            originalEdgesMap.set(node.id, policyEdges);
+          }
+        }
+      });
+      setOriginalPolicyEdges(originalEdgesMap);
     }
-  }, [policyIds, initialNodes, setNodes, setEdges]);
-  
+  }, [policyIds, initialNodes, setNodes, setEdges, collectPolicySubgraphEdges, policies]);
+
   // Debounced position save handler
   const schedulePositionSave = useCallback(() => {
     if (!onPositionsChange) return;
@@ -540,28 +742,125 @@ export function MultiPolicyCanvas({
     const currentEdges = edgesRef.current;
     const currentNodes = nodesRef.current;
 
+    // Helper to check if a value node has a complete condition chain (attr -> op -> val)
+    const isCompleteConditionChain = (valueNodeId: string): boolean => {
+      const valueNode = currentNodes.find(n => n.id === valueNodeId && n.type === "value");
+      if (!valueNode) return false;
+      const operatorEdge = currentEdges.find(e => e.target === valueNode.id);
+      if (!operatorEdge) return false;
+      const operatorNode = currentNodes.find(n => n.id === operatorEdge.source && n.type === "operator");
+      if (!operatorNode) return false;
+      const attributeEdge = currentEdges.find(e => e.target === operatorNode.id);
+      if (!attributeEdge) return false;
+      const attributeNode = currentNodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
+      return !!attributeNode;
+    };
+
     let count = 0;
     const outputEdges = currentEdges.filter(e => e.target === nodeId);
 
     for (const outputEdge of outputEdges) {
       const outputNode = currentNodes.find(n => n.id === outputEdge.source && n.type === "output");
       if (!outputNode) continue;
-      const valueEdge = currentEdges.find(e => e.target === outputNode.id);
-      if (!valueEdge) continue;
-      const valueNode = currentNodes.find(n => n.id === valueEdge.source && n.type === "value");
-      if (!valueNode) continue;
-      const operatorEdge = currentEdges.find(e => e.target === valueNode.id);
-      if (!operatorEdge) continue;
-      const operatorNode = currentNodes.find(n => n.id === operatorEdge.source && n.type === "operator");
-      if (!operatorNode) continue;
-      const attributeEdge = currentEdges.find(e => e.target === operatorNode.id);
-      if (!attributeEdge) continue;
-      const attributeNode = currentNodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
-      if (attributeNode) count++;
+
+      const toOutputEdge = currentEdges.find(e => e.target === outputNode.id);
+      if (!toOutputEdge) continue;
+
+      const sourceNode = currentNodes.find(n => n.id === toOutputEdge.source);
+      if (!sourceNode) continue;
+
+      // Handle conditionLogic node (AND/OR)
+      if (sourceNode.type === "conditionLogic") {
+        const valueEdges = currentEdges.filter(e => e.target === sourceNode.id);
+        for (const valueEdge of valueEdges) {
+          if (isCompleteConditionChain(valueEdge.source)) {
+            count++;
+          }
+        }
+      } else if (sourceNode.type === "value") {
+        // Direct value → output connection
+        if (isCompleteConditionChain(sourceNode.id)) {
+          count++;
+        }
+      }
     }
 
     return count;
   }, []);
+
+  // Helper to trace a condition chain and extract data for statement generation
+  const traceConditionForStatement = useCallback((valueNodeId: string): ConditionData | null => {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    const valueNode = currentNodes.find(n => n.id === valueNodeId && n.type === "value");
+    if (!valueNode) return null;
+
+    const operatorEdge = currentEdges.find(e => e.target === valueNode.id);
+    if (!operatorEdge) return null;
+
+    const operatorNode = currentNodes.find(n => n.id === operatorEdge.source && n.type === "operator");
+    if (!operatorNode) return null;
+
+    const attributeEdge = currentEdges.find(e => e.target === operatorNode.id);
+    if (!attributeEdge) return null;
+
+    const attributeNode = currentNodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
+    if (!attributeNode) return null;
+
+    return {
+      attribute: attributeNode.data.attribute,
+      operator: operatorNode.data.operator,
+      value: valueNode.data.value,
+    };
+  }, []);
+
+  // Extracts all connected conditions for a given policy node
+  const getConnectedConditionsData = useCallback((policyNodeId: string): {
+    conditions: ConditionData[];
+    conditionLogic: "AND" | "OR";
+  } => {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    const conditions: ConditionData[] = [];
+    let detectedConditionLogic: "AND" | "OR" = "AND";
+
+    // Find all output nodes connected to this policy
+    const outputEdges = currentEdges.filter(e => e.target === policyNodeId);
+
+    for (const outputEdge of outputEdges) {
+      const outputNode = currentNodes.find(n => n.id === outputEdge.source && n.type === "output");
+      if (!outputNode) continue;
+
+      const toOutputEdge = currentEdges.find(e => e.target === outputNode.id);
+      if (!toOutputEdge) continue;
+
+      const sourceNode = currentNodes.find(n => n.id === toOutputEdge.source);
+      if (!sourceNode) continue;
+
+      // Handle conditionLogic node (AND/OR)
+      if (sourceNode.type === "conditionLogic") {
+        const logicData = sourceNode.data as ConditionLogicNodeData;
+        detectedConditionLogic = logicData.conditionLogic || "AND";
+
+        const valueEdges = currentEdges.filter(e => e.target === sourceNode.id);
+        for (const valueEdge of valueEdges) {
+          const condition = traceConditionForStatement(valueEdge.source);
+          if (condition) {
+            conditions.push(condition);
+          }
+        }
+      } else if (sourceNode.type === "value") {
+        const condition = traceConditionForStatement(sourceNode.id);
+        if (condition) {
+          conditions.push(condition);
+        }
+      }
+    }
+
+    return { conditions, conditionLogic: detectedConditionLogic };
+  }, [traceConditionForStatement]);
 
   // Save a new policy - defined early so it can be used in useEffects
   const handleSaveNewPolicy = useCallback(async (nodeId: string, status: "draft" | "published" = "draft") => {
@@ -587,38 +886,76 @@ export function MultiPolicyCanvas({
       return;
     }
 
-    // Find conditions connected to this policy using current state
-    const conditions: PolicyCondition[] = [];
-    const outputEdges = currentEdges.filter(e => e.target === nodeId);
-    
-    for (const outputEdge of outputEdges) {
-      const outputNode = currentNodes.find(n => n.id === outputEdge.source && n.type === "output");
-      if (!outputNode) continue;
-
-      const valueEdge = currentEdges.find(e => e.target === outputNode.id);
-      if (!valueEdge) continue;
-      const valueNode = currentNodes.find(n => n.id === valueEdge.source && n.type === "value");
-      if (!valueNode) continue;
+    // Helper to trace from value node back to attribute
+    const traceConditionChainLocal = (valueNodeId: string, outputData?: any): PolicyCondition | null => {
+      const valueNode = currentNodes.find(n => n.id === valueNodeId && n.type === "value");
+      if (!valueNode) return null;
 
       const operatorEdge = currentEdges.find(e => e.target === valueNode.id);
-      if (!operatorEdge) continue;
+      if (!operatorEdge) return null;
       const operatorNode = currentNodes.find(n => n.id === operatorEdge.source && n.type === "operator");
-      if (!operatorNode) continue;
+      if (!operatorNode) return null;
 
       const attributeEdge = currentEdges.find(e => e.target === operatorNode.id);
-      if (!attributeEdge) continue;
+      if (!attributeEdge) return null;
       const attributeNode = currentNodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
-      if (!attributeNode) continue;
+      if (!attributeNode) return null;
 
-      conditions.push({
+      return {
         id: attributeNode.data.id || generateId(),
         attribute: attributeNode.data.attribute,
         operator: operatorNode.data.operator,
         value: valueNode.data.value,
         sourceRegulation: attributeNode.data.sourceRegulation,
         notes: attributeNode.data.notes,
-        output: outputNode.data.output,
-      });
+        output: outputData,
+      };
+    };
+
+    // Find conditions connected to this policy using current state
+    const conditions: PolicyCondition[] = [];
+    const outputEdges = currentEdges.filter(e => e.target === nodeId);
+
+    // Detect conditionLogic from graph structure
+    let detectedConditionLogic: "AND" | "OR" | undefined = policyData.conditionLogic;
+
+    for (const outputEdge of outputEdges) {
+      const outputNode = currentNodes.find(n => n.id === outputEdge.source && n.type === "output");
+      if (!outputNode) continue;
+
+      // Check what's connected to the output node
+      const toOutputEdge = currentEdges.find(e => e.target === outputNode.id);
+      if (!toOutputEdge) continue;
+
+      const sourceNode = currentNodes.find(n => n.id === toOutputEdge.source);
+      if (!sourceNode) continue;
+
+      // Handle conditionLogic node (AND/OR)
+      if (sourceNode.type === "conditionLogic") {
+        const logicNode = sourceNode;
+        const logicData = logicNode.data as ConditionLogicNodeData;
+
+        // Detect conditionLogic from the node in the graph
+        if (logicData.conditionLogic) {
+          detectedConditionLogic = logicData.conditionLogic;
+        }
+
+        // Find all value nodes connected to this logic node
+        const valueEdges = currentEdges.filter(e => e.target === logicNode.id);
+
+        for (const valueEdge of valueEdges) {
+          const condition = traceConditionChainLocal(valueEdge.source, outputNode.data.output);
+          if (condition) {
+            conditions.push(condition);
+          }
+        }
+      } else if (sourceNode.type === "value") {
+        // Direct value → output connection (existing behavior)
+        const condition = traceConditionChainLocal(sourceNode.id, outputNode.data.output);
+        if (condition) {
+          conditions.push(condition);
+        }
+      }
     }
 
     // Validate conditions for publish
@@ -641,7 +978,7 @@ export function MultiPolicyCanvas({
         name: policyData.name,
         description: policyData.description,
         conditions,
-        conditionLogic: policyData.conditionLogic,
+        conditionLogic: detectedConditionLogic,
         baseOutput: policyData.baseOutput,
         mergeStrategies: policyData.mergeStrategies,
         status,
@@ -674,6 +1011,13 @@ export function MultiPolicyCanvas({
           target: edge.target === nodeId ? `policy_${newPolicyId}` : edge.target,
         }))
       );
+
+      // Track this policy ID to prevent race condition with Convex query subscription
+      recentlySavedPoliciesRef.current.add(newPolicyId);
+      // Clear after delay to allow the effect to skip reinitialization
+      setTimeout(() => {
+        recentlySavedPoliciesRef.current.delete(newPolicyId);
+      }, 2000);
 
       toast.success(status === "published" ? "Policy published!" : "Policy saved as draft!");
       setHasUnsavedChanges(false);
@@ -756,12 +1100,220 @@ export function MultiPolicyCanvas({
     }
   }, [onPublishPolicy, setNodes]);
 
+  // Handler for saving published policy changes as a new draft
+  const handleSavePublishedAsDraft = useCallback(async (nodeId: string, policyId: string) => {
+    if (!onCreateDraftFromPublished) return;
+
+    // Use refs to get current nodes/edges
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    // Helper to trace from value node back to attribute
+    const traceConditionChainLocal = (valueNodeId: string, outputData?: any): PolicyCondition | null => {
+      const valueNode = currentNodes.find(n => n.id === valueNodeId && n.type === "value");
+      if (!valueNode) return null;
+
+      const operatorEdge = currentEdges.find(e => e.target === valueNode.id);
+      if (!operatorEdge) return null;
+      const operatorNode = currentNodes.find(n => n.id === operatorEdge.source && n.type === "operator");
+      if (!operatorNode) return null;
+
+      const attributeEdge = currentEdges.find(e => e.target === operatorNode.id);
+      if (!attributeEdge) return null;
+      const attributeNode = currentNodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
+      if (!attributeNode) return null;
+
+      return {
+        id: attributeNode.data.id || generateId(),
+        attribute: attributeNode.data.attribute,
+        operator: operatorNode.data.operator,
+        value: valueNode.data.value,
+        sourceRegulation: attributeNode.data.sourceRegulation,
+        notes: attributeNode.data.notes,
+        output: outputData,
+      };
+    };
+
+    // Find conditions connected to this policy (same logic as handleSaveNewPolicy)
+    const conditions: PolicyCondition[] = [];
+    const outputEdges = currentEdges.filter(e => e.target === nodeId);
+
+    // Detect conditionLogic from graph structure
+    let detectedConditionLogic: "AND" | "OR" | undefined;
+
+    for (const outputEdge of outputEdges) {
+      const outputNode = currentNodes.find(n => n.id === outputEdge.source && n.type === "output");
+      if (!outputNode) continue;
+
+      // Check what's connected to the output node
+      const toOutputEdge = currentEdges.find(e => e.target === outputNode.id);
+      if (!toOutputEdge) continue;
+
+      const sourceNode = currentNodes.find(n => n.id === toOutputEdge.source);
+      if (!sourceNode) continue;
+
+      // Handle conditionLogic node (AND/OR)
+      if (sourceNode.type === "conditionLogic") {
+        const logicNode = sourceNode;
+        const logicData = logicNode.data as ConditionLogicNodeData;
+
+        // Detect conditionLogic from the node in the graph
+        if (logicData.conditionLogic) {
+          detectedConditionLogic = logicData.conditionLogic;
+        }
+
+        // Find all value nodes connected to this logic node
+        const valueEdges = currentEdges.filter(e => e.target === logicNode.id);
+
+        for (const valueEdge of valueEdges) {
+          const condition = traceConditionChainLocal(valueEdge.source, outputNode.data.output);
+          if (condition) {
+            conditions.push(condition);
+          }
+        }
+      } else if (sourceNode.type === "value") {
+        // Direct value → output connection (existing behavior)
+        const condition = traceConditionChainLocal(sourceNode.id, outputNode.data.output);
+        if (condition) {
+          conditions.push(condition);
+        }
+      }
+    }
+
+    // Get condition logic from the policy node (fallback) or detected from graph
+    const policyNode = currentNodes.find(n => n.id === nodeId);
+    const conditionLogic = detectedConditionLogic || (policyNode?.data as PolicyCenterNodeData)?.conditionLogic;
+
+    setSavingPolicies(prev => new Set(prev).add(nodeId));
+
+    try {
+      await onCreateDraftFromPublished(policyId, conditions, conditionLogic);
+
+      // Update original edge state for this policy (reset pending changes)
+      // Use full subgraph edges for consistency with initialization
+      const currentEdgeIds = collectPolicySubgraphEdges(nodeId, currentNodes, currentEdges);
+      setOriginalPolicyEdges(prev => {
+        const next = new Map(prev);
+        next.set(nodeId, currentEdgeIds);
+        return next;
+      });
+
+      toast.success("Draft version created! The published policy remains active.");
+    } catch (error) {
+      console.error("Failed to create draft from published:", error);
+      toast.error("Failed to save as draft");
+    } finally {
+      setSavingPolicies(prev => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+    }
+  }, [onCreateDraftFromPublished, collectPolicySubgraphEdges]);
+
+  // Handler for showing delete confirmation dialog
+  const handleShowDeleteConfirmDialog = useCallback((nodeId: string, policyId: string) => {
+    setPendingDeleteNodeId(nodeId);
+    setPendingDeletePolicyId(policyId);
+    setShowDeleteConfirmDialog(true);
+  }, []);
+
+  // Handler for confirming policy deletion
+  const handleConfirmDeletePolicy = useCallback(async () => {
+    if (!pendingDeleteNodeId || !pendingDeletePolicyId || !onDeletePolicy) return;
+
+    const nodeId = pendingDeleteNodeId;
+    const policyId = pendingDeletePolicyId;
+
+    setShowDeleteConfirmDialog(false);
+    setDeletingPolicies(prev => new Set(prev).add(nodeId));
+
+    try {
+      // Get current state for subgraph collection BEFORE deletion
+      const currentNodes = nodesRef.current;
+      const currentEdges = edgesRef.current;
+
+      // Collect all nodes in the policy's subgraph (policy + output + logic + value + operator + attribute)
+      const subgraphNodeIds = collectPolicySubgraphNodes(nodeId, currentNodes, currentEdges);
+      const subgraphNodeIdSet = new Set(subgraphNodeIds);
+
+      // Delete from database
+      await onDeletePolicy(policyId);
+
+      // Record history before removing nodes
+      recordHistory();
+
+      // Remove all subgraph nodes from canvas
+      setNodes((nds) => nds.filter((node) => !subgraphNodeIdSet.has(node.id)));
+
+      // Remove all edges that involve any subgraph node
+      setEdges((eds) => eds.filter((edge) =>
+        !subgraphNodeIdSet.has(edge.source) && !subgraphNodeIdSet.has(edge.target)
+      ));
+    } catch (error) {
+      console.error("Failed to delete policy:", error);
+      toast.error("Failed to delete policy");
+    } finally {
+      setDeletingPolicies(prev => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+      setPendingDeleteNodeId(null);
+      setPendingDeletePolicyId(null);
+    }
+  }, [pendingDeleteNodeId, pendingDeletePolicyId, onDeletePolicy, setNodes, setEdges, recordHistory, collectPolicySubgraphNodes]);
+
   // Inject callbacks into policy nodes
   useEffect(() => {
+    // Compute pending changes inside the effect to avoid circular dependency
+    // Takes currentNodes to traverse the policy's full subgraph
+    const computePendingChanges = (nodeId: string, currentNodes: Node[]): boolean => {
+      const originalEdgeSet = originalPolicyEdges.get(nodeId);
+      if (!originalEdgeSet) return false;
+
+      // Get all edges in the policy's subgraph (not just direct connections)
+      // This includes edges to output nodes and conditionLogic nodes
+      const visitedNodes = new Set<string>();
+      const nodesToVisit: string[] = [nodeId];
+      const currentEdgeSet = new Set<string>();
+
+      while (nodesToVisit.length > 0) {
+        const currentNodeId = nodesToVisit.shift()!;
+        if (visitedNodes.has(currentNodeId)) continue;
+        visitedNodes.add(currentNodeId);
+
+        edges.forEach((edge) => {
+          if (edge.target === currentNodeId) {
+            currentEdgeSet.add(`${edge.source}|${edge.sourceHandle || ''}|${edge.target}|${edge.targetHandle || ''}`);
+
+            const sourceNode = currentNodes.find(n => n.id === edge.source);
+            if (sourceNode && (sourceNode.type === "output" || sourceNode.type === "conditionLogic")) {
+              nodesToVisit.push(sourceNode.id);
+            }
+          }
+        });
+      }
+
+      // Compare: check if edges were added or removed
+      if (currentEdgeSet.size !== originalEdgeSet.size) return true;
+      for (const id of currentEdgeSet) {
+        if (!originalEdgeSet.has(id)) return true;
+      }
+      for (const id of originalEdgeSet) {
+        if (!currentEdgeSet.has(id)) return true;
+      }
+      return false;
+    };
+
     setNodes((nds) =>
       nds.map((node) => {
         if (node.type === "policyCenter") {
           const data = node.data as PolicyCenterNodeData;
+
+          // Generate condition statement for this policy node
+          const { conditions, conditionLogic } = getConnectedConditionsData(node.id);
+          const conditionStatement = generateConditionStatement(conditions, conditionLogic);
 
           if (data.isNew) {
             // New unsaved policy - inject save handler
@@ -769,18 +1321,42 @@ export function MultiPolicyCanvas({
               ...node,
               data: {
                 ...data,
+                conditionStatement,
                 isSaving: savingPolicies.has(node.id),
                 onSave: () => handleShowSaveOptionsDialog(node.id),
               },
             };
           } else if (data.status === "draft" && data._id) {
-            // Existing draft policy - inject publish handler
+            // Existing draft policy - inject publish and delete handlers
             return {
               ...node,
               data: {
                 ...data,
+                conditionStatement,
                 isPublishing: publishingPolicies.has(node.id),
                 onPublish: () => handlePublishPolicy(node.id, data._id!),
+                isDeleting: deletingPolicies.has(node.id),
+                onDelete: onDeletePolicy ? () => handleShowDeleteConfirmDialog(node.id, data._id!) : undefined,
+              },
+            };
+          } else if (data.status === "published" && data._id) {
+            // Published policy - inject pending changes state, save as draft handler, AND delete handler
+            const hasPendingChanges = computePendingChanges(node.id, nds);
+            return {
+              ...node,
+              data: {
+                ...data,
+                conditionStatement,
+                hasPendingChanges,
+                isSavingAsDraft: savingPolicies.has(node.id),
+                onSaveAsDraft: hasPendingChanges
+                  ? () => handleSavePublishedAsDraft(node.id, data._id!)
+                  : undefined,
+                // Enable deletion for published policies
+                isDeleting: deletingPolicies.has(node.id),
+                onDelete: onDeletePolicy
+                  ? () => handleShowDeleteConfirmDialog(node.id, data._id!)
+                  : undefined,
               },
             };
           }
@@ -788,7 +1364,7 @@ export function MultiPolicyCanvas({
         return node;
       })
     );
-  }, [savingPolicies, publishingPolicies, setNodes, handleShowSaveOptionsDialog, handlePublishPolicy, nodes.length]);
+  }, [savingPolicies, publishingPolicies, deletingPolicies, originalPolicyEdges, edges, setNodes, handleShowSaveOptionsDialog, handlePublishPolicy, handleSavePublishedAsDraft, handleShowDeleteConfirmDialog, onDeletePolicy, getConnectedConditionsData, conditionDataFingerprint]);
 
   // Validate connection based on port types
   const isValidConnection = useCallback((connection: Connection) => {
@@ -1179,7 +1755,8 @@ export function MultiPolicyCanvas({
 
         {/* Canvas */}
         <div className="flex-1 min-h-0" ref={reactFlowWrapper}>
-          <ReactFlow
+          <TooltipProvider delayDuration={300}>
+            <ReactFlow
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
@@ -1287,7 +1864,8 @@ export function MultiPolicyCanvas({
                 </div>
               </Panel>
             )}
-          </ReactFlow>
+            </ReactFlow>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -1351,6 +1929,73 @@ export function MultiPolicyCanvas({
         }
         hasConditions={pendingSaveNodeId ? countConnectedConditions(pendingSaveNodeId) > 0 : false}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirmDialog} onOpenChange={setShowDeleteConfirmDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          {(() => {
+            const policyNode = nodes.find(n => n.id === pendingDeleteNodeId);
+            const policyData = policyNode?.data as PolicyCenterNodeData | undefined;
+            const isPublished = policyData?.status === "published";
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className={`flex items-center gap-2 ${isPublished ? "text-orange-600" : "text-red-600"}`}>
+                    <Trash2 className="h-5 w-5" />
+                    Delete {isPublished ? "Published " : "Draft "}Policy
+                  </DialogTitle>
+                  <DialogDescription>
+                    {isPublished
+                      ? "Warning: You are about to permanently delete a published policy. This will remove the policy from the compliance system and cannot be undone."
+                      : "Are you sure you want to delete this draft policy? This action cannot be undone."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                  <div className={`${isPublished ? "bg-orange-50 border-orange-200" : "bg-red-50 border-red-200"} border rounded-lg p-3`}>
+                    <p className={`text-sm font-medium ${isPublished ? "text-orange-800" : "text-red-800"}`}>
+                      {policyData?.name || "Unnamed Policy"}
+                    </p>
+                    <p className={`text-xs ${isPublished ? "text-orange-600" : "text-red-600"} mt-1`}>
+                      This will permanently remove the policy and all its connected condition nodes from the canvas.
+                    </p>
+                    {isPublished && (
+                      <p className="text-xs text-orange-700 mt-2 font-medium">
+                        This is a published policy currently in use!
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDeleteConfirmDialog(false);
+                      setPendingDeleteNodeId(null);
+                      setPendingDeletePolicyId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className={isPublished ? "bg-orange-600 hover:bg-orange-700" : ""}
+                    onClick={handleConfirmDeletePolicy}
+                    disabled={pendingDeleteNodeId ? deletingPolicies.has(pendingDeleteNodeId) : false}
+                  >
+                    {pendingDeleteNodeId && deletingPolicies.has(pendingDeleteNodeId) ? (
+                      <div className="h-4 w-4 animate-spin border-2 border-white border-t-transparent rounded-full mr-1" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 mr-1" />
+                    )}
+                    Delete
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

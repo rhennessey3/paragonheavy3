@@ -61,6 +61,7 @@ export default function PolicyGraphPage() {
   const updatePolicy = useMutation(api.policies.updatePolicy);
   const deletePolicy = useMutation(api.policies.deletePolicy);
   const updatePolicyStatus = useMutation(api.policies.updatePolicyStatus);
+  const createDraftFromPublished = useMutation(api.policies.createDraftFromPublished);
   
   // Canvas layout persistence
   const canvasLayout = useQuery(api.canvasLayouts.getCanvasLayout, {
@@ -123,11 +124,16 @@ export default function PolicyGraphPage() {
 
   // Handle deleting a policy
   const handleDeletePolicy = useCallback(async (policyId: string): Promise<void> => {
+    // Check if this is a published policy - if so, use force deletion
+    const policy = policies?.find(p => p._id === policyId);
+    const isPublished = policy?.status === "published";
+
     await deletePolicy({
       policyId: policyId as Id<"compliancePolicies">,
+      force: isPublished ? true : undefined,
     });
     toast.success("Policy deleted");
-  }, [deletePolicy]);
+  }, [deletePolicy, policies]);
 
   // Handle publishing a draft policy
   const handlePublishPolicy = useCallback(async (policyId: string): Promise<void> => {
@@ -136,6 +142,20 @@ export default function PolicyGraphPage() {
       status: "published",
     });
   }, [updatePolicyStatus]);
+
+  // Handle creating a draft from a published policy
+  const handleCreateDraftFromPublished = useCallback(async (
+    sourcePolicyId: string,
+    conditions: CompliancePolicy["conditions"],
+    conditionLogic?: "AND" | "OR"
+  ): Promise<string> => {
+    const draftId = await createDraftFromPublished({
+      sourcePolicyId: sourcePolicyId as Id<"compliancePolicies">,
+      conditions,
+      conditionLogic,
+    });
+    return draftId;
+  }, [createDraftFromPublished]);
 
   // Handle policy click - policy is already visible on canvas, no navigation needed
   const handlePolicyClick = useCallback((policyId: string) => {
@@ -423,6 +443,7 @@ export default function PolicyGraphPage() {
             onSaveDraft={handleSaveDraft}
             isSavingDraft={isSavingDraft}
             lastDraftSaved={lastDraftSaved}
+            onCreateDraftFromPublished={handleCreateDraftFromPublished}
           />
         )}
       </div>

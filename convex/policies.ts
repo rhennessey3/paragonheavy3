@@ -163,11 +163,71 @@ export const updatePolicyStatus = mutation({
 });
 
 /**
- * Delete a policy (only drafts can be deleted)
+ * Create a draft version from an existing published policy
+ * The original published policy remains active
+ */
+export const createDraftFromPublished = mutation({
+  args: {
+    sourcePolicyId: v.id("compliancePolicies"),
+    conditions: v.optional(v.array(v.object({
+      id: v.string(),
+      attribute: v.string(),
+      operator: v.string(),
+      value: v.any(),
+      sourceRegulation: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      priority: v.optional(v.number()),
+      output: v.optional(v.any()),
+    }))),
+    conditionLogic: v.optional(v.union(
+      v.literal("AND"),
+      v.literal("OR")
+    )),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireAuthSession(ctx);
+    const now = Date.now();
+
+    // Get the source policy
+    const sourcePolicy = await ctx.db.get(args.sourcePolicyId);
+    if (!sourcePolicy) {
+      throw new Error("Source policy not found");
+    }
+
+    if (sourcePolicy.status !== "published") {
+      throw new Error("Can only create draft from published policies");
+    }
+
+    // Create a new draft policy based on the published one
+    const draftPolicyId = await ctx.db.insert("compliancePolicies", {
+      jurisdictionId: sourcePolicy.jurisdictionId,
+      policyType: sourcePolicy.policyType,
+      name: `${sourcePolicy.name} (Draft)`,
+      description: sourcePolicy.description,
+      status: "draft",
+      conditions: args.conditions || sourcePolicy.conditions,
+      conditionLogic: args.conditionLogic || sourcePolicy.conditionLogic,
+      baseOutput: sourcePolicy.baseOutput,
+      mergeStrategies: sourcePolicy.mergeStrategies,
+      effectiveFrom: sourcePolicy.effectiveFrom,
+      effectiveTo: sourcePolicy.effectiveTo,
+      createdBy: session.sub,
+      updatedBy: session.sub,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return draftPolicyId;
+  },
+});
+
+/**
+ * Delete a policy (drafts can be deleted directly, published requires force=true)
  */
 export const deletePolicy = mutation({
   args: {
     policyId: v.id("compliancePolicies"),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireAuthSession(ctx);
@@ -177,8 +237,8 @@ export const deletePolicy = mutation({
       throw new Error("Policy not found");
     }
 
-    if (policy.status !== "draft") {
-      throw new Error("Can only delete draft policies. Archive published policies instead.");
+    if (policy.status !== "draft" && !args.force) {
+      throw new Error("Can only delete draft policies. Use force=true to permanently delete published policies.");
     }
 
     // Delete related policy relationships

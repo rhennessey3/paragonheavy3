@@ -89,6 +89,16 @@ const LOGICAL_OPERATORS = [
   { value: "OR", label: "Any Match (OR)", shortLabel: "OR", symbol: "|", color: "bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100", description: "Any condition being true will trigger the policy" },
 ];
 
+// Merge strategies for combining multiple outputs
+const MERGE_STRATEGIES = [
+  { value: "max", label: "Maximum", shortLabel: "MAX", description: "Use the highest value from all matching outputs" },
+  { value: "min", label: "Minimum", shortLabel: "MIN", description: "Use the lowest value from all matching outputs" },
+  { value: "sum", label: "Sum", shortLabel: "SUM", description: "Add all values from matching outputs together" },
+  { value: "first", label: "First Match", shortLabel: "1ST", description: "Use the value from the first matching output" },
+  { value: "last", label: "Last Match", shortLabel: "LST", description: "Use the value from the last matching output" },
+  { value: "union", label: "Union", shortLabel: "ALL", description: "Combine all values from matching outputs" },
+];
+
 // Value type definitions
 const VALUE_TYPES = [
   { id: "number", label: "Number Value", icon: Hash, description: "A single numeric value (e.g., 14.5 feet)", data: { valueType: "number", value: 0, useFeetInches: true, feet: 0, inches: 0 } },
@@ -460,6 +470,44 @@ export function NodePalette({
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={8}>
                       <p className="max-w-xs">{logic.description}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </CollapsibleSection>
+
+            {/* Merge Strategy */}
+            <CollapsibleSection title="Merge Strategy" icon={GitMerge}>
+              <div className="space-y-1.5">
+                {MERGE_STRATEGIES.map((strategy) => (
+                  <Tooltip key={strategy.value}>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <DraggableItem
+                          type="mergeStrategy"
+                          data={{
+                            strategy: strategy.value,
+                            label: strategy.label,
+                          }}
+                        >
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100">
+                            <div className="w-8 h-8 flex items-center justify-center rounded-full font-bold text-xs bg-teal-200 text-teal-800">
+                              {strategy.shortLabel}
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-xs font-semibold text-teal-800 uppercase tracking-wide">
+                                {strategy.label}
+                              </div>
+                              <div className="text-[10px] text-teal-500 line-clamp-1">
+                                {strategy.description}
+                              </div>
+                            </div>
+                          </div>
+                        </DraggableItem>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      <p className="max-w-xs">{strategy.description}</p>
                     </TooltipContent>
                   </Tooltip>
                 ))}
