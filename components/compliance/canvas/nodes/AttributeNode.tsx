@@ -1,9 +1,9 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useState, useCallback } from "react";
 import { Handle, Position, type NodeProps, useReactFlow } from "@xyflow/react";
 import { Input } from "@/components/ui/input";
-import { Ruler, Scale, MapPin, ToggleLeft, Info, X } from "lucide-react";
+import { Ruler, Scale, MapPin, ToggleLeft, Info, X, Calendar } from "lucide-react";
 
 // Attribute type to category mapping
 const ATTRIBUTE_ICONS: Record<string, React.ElementType> = {
@@ -55,6 +55,7 @@ export interface AttributeNodeData {
   attributeType?: string;
   unit?: string;
   sourceRegulation?: string;
+  expiryDate?: string;
   notes?: string;
 }
 
@@ -64,8 +65,18 @@ export const AttributeNode = memo(function AttributeNode({
   selected,
 }: NodeProps & { data: AttributeNodeData }) {
   const [showNotes, setShowNotes] = useState(false);
-  const [notes, setNotes] = useState(data.notes || "");
-  const { deleteElements } = useReactFlow();
+  const { deleteElements, setNodes } = useReactFlow();
+
+  // Update node data
+  const updateData = useCallback((updates: Partial<AttributeNodeData>) => {
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, ...updates } }
+          : node
+      )
+    );
+  }, [id, setNodes]);
 
   const handleDelete = () => {
     deleteElements({ nodes: [{ id }] });
@@ -112,15 +123,33 @@ export const AttributeNode = memo(function AttributeNode({
         </button>
       </div>
 
-      {/* Notes Section (expandable) */}
+      {/* Citation Section (expandable) */}
       {showNotes && (
-        <div className="px-3 py-2 border-b border-gray-200 bg-white/50">
-          <Input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add source regulation..."
-            className="h-7 text-xs"
-          />
+        <div className="px-3 py-2 border-b border-gray-200 bg-white/50 space-y-2">
+          <div>
+            <label className="text-[10px] text-gray-500 mb-0.5 block flex items-center gap-1">
+              <Scale className="h-2.5 w-2.5" />
+              Law Citation
+            </label>
+            <Input
+              value={data.sourceRegulation || ""}
+              onChange={(e) => updateData({ sourceRegulation: e.target.value })}
+              placeholder="e.g., 67 Pa. Code § 179.3"
+              className="h-7 text-xs"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 mb-0.5 block flex items-center gap-1">
+              <Calendar className="h-2.5 w-2.5" />
+              Expiry Date (optional)
+            </label>
+            <Input
+              type="date"
+              value={data.expiryDate || ""}
+              onChange={(e) => updateData({ expiryDate: e.target.value })}
+              className="h-7 text-xs"
+            />
+          </div>
         </div>
       )}
 

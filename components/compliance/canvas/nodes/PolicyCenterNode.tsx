@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, Shield, Settings, FileText, Save, Sparkles, Car, Gauge, Clock, MapPin, Zap, Ruler, Send, Loader2, AlertTriangle, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Shield, Settings, FileText, Save, Sparkles, Car, Gauge, Clock, MapPin, Zap, Ruler, Send, Loader2, AlertTriangle, Trash2, Scale } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type PolicyType, POLICY_TYPES } from "@/lib/compliance";
+import { type ConditionDisplayItem } from "@/lib/condition-statement";
 
 export interface PolicyCenterNodeData {
   id?: string;
@@ -48,6 +48,12 @@ export interface PolicyCenterNodeData {
   isDeleting?: boolean;
   /** Auto-generated statement of conditions (read-only display) */
   conditionStatement?: string;
+  /** Auto-generated output statement (read-only display) */
+  outputStatement?: string;
+  /** Structured condition items for rendering with citations */
+  conditionItems?: ConditionDisplayItem[];
+  /** Connector between conditions (AND/OR) for display */
+  conditionConnector?: string;
 }
 
 // Policy icon mapping
@@ -93,7 +99,7 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
   return (
     <div
       className={`
-        w-[320px] rounded-xl border-2 shadow-lg transition-all
+        w-[400px] rounded-xl border-2 shadow-lg transition-all
         ${isNew
           ? "bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-dashed"
           : hasPendingChanges
@@ -157,14 +163,18 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
             <div className="flex items-center gap-2 mt-0.5">
               <Badge
                 variant="outline"
-                className="text-[10px] h-4 px-1.5 bg-white/50"
+                className="text-[10px] h-4 px-1.5 bg-white/80 text-gray-700 border-gray-300"
               >
                 {policyConfig?.label || data.policyType}
               </Badge>
               {!isNew && (
                 <Badge
                   variant={data.status === "published" ? "default" : "secondary"}
-                  className="text-[10px] h-4 px-1.5"
+                  className={`text-[10px] h-4 px-1.5 ${
+                    data.status === "published"
+                      ? "bg-purple-600 text-white"
+                      : "bg-gray-200 text-gray-700"
+                  }`}
                 >
                   {data.status || "draft"}
                 </Badge>
@@ -174,8 +184,8 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
                   variant="outline"
                   className={`text-[10px] h-4 px-1.5 ${
                     data.conditionCount === 0
-                      ? "bg-amber-50 text-amber-600 border-amber-300"
-                      : "bg-white/50"
+                      ? "bg-amber-100 text-amber-700 border-amber-400"
+                      : "bg-white/80 text-gray-700 border-gray-300"
                   }`}
                 >
                   {data.conditionCount === 0
@@ -221,7 +231,7 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
       </div>
 
       {/* Content Sections */}
-      <ScrollArea className="max-h-[300px]">
+      <div className="flex flex-col">
         {/* Details Section */}
         <div className="border-b border-indigo-100">
           <button
@@ -238,20 +248,95 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
           </button>
           {expandedSection === "details" && (
             <div className="px-4 pb-3 space-y-3">
-              {/* Statement of Conditions (Auto-generated, read-only) */}
+              {/* Output Statement (Auto-generated, read-only) - shown above conditions */}
+              {data.outputStatement && (
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
+                    <Settings className="h-3 w-3" />
+                    Then
+                  </label>
+                  <div className="p-3 rounded-lg border text-sm leading-relaxed bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 text-gray-700">
+                    {data.outputStatement}
+                  </div>
+                </div>
+              )}
+              {/* Statement of Conditions (Auto-generated with citation fields) */}
               <div>
                 <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
                   <Sparkles className="h-3 w-3" />
                   Statement of Conditions
                 </label>
                 <div className={`
-                  p-3 rounded-lg border text-sm leading-relaxed
+                  rounded-lg border
                   ${data.conditionCount === 0
-                    ? "bg-amber-50 border-amber-200 text-amber-700 italic"
-                    : "bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200 text-gray-700"
+                    ? "bg-amber-50 border-amber-200"
+                    : "bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200"
                   }
                 `}>
-                  {data.conditionStatement || "No conditions connected"}
+                  {data.conditionItems && data.conditionItems.length > 0 ? (
+                    <div className="divide-y divide-indigo-100">
+                      {data.conditionItems.map((item, index) => (
+                        <div key={index}>
+                          {/* Show connector between conditions */}
+                          {index > 0 && (
+                            <div className="px-3 py-1 bg-indigo-100/50 text-center">
+                              <span className="text-xs font-semibold text-indigo-600">
+                                {data.conditionConnector || "AND"}
+                              </span>
+                            </div>
+                          )}
+                          <div className="p-2 flex items-start gap-2">
+                            {/* Condition phrase */}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm text-gray-700 flex items-center gap-1.5">
+                                <span className="text-indigo-400">•</span>
+                                <span className="font-medium">{item.phrase}</span>
+                              </div>
+                            </div>
+                            {/* Citation fields */}
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center">
+                                    <Scale className="h-3 w-3 text-gray-400 mr-1" />
+                                    <Input
+                                      value={item.sourceRegulation || ""}
+                                      placeholder="Cite law..."
+                                      className="h-6 w-[100px] text-[10px] px-1.5 bg-white/80"
+                                      readOnly
+                                    />
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Law citation (e.g., 67 Pa. Code § 179.3)</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center">
+                                    <Clock className="h-3 w-3 text-gray-400 mr-1" />
+                                    <Input
+                                      type="date"
+                                      value={item.expiryDate || ""}
+                                      className="h-6 w-[95px] text-[10px] px-1.5 bg-white/80"
+                                      readOnly
+                                    />
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Expiry date (optional)</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 text-sm text-amber-700 italic">
+                      No conditions connected
+                    </div>
+                  )}
                 </div>
               </div>
               <div>
@@ -312,7 +397,7 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
             </div>
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Footer */}
       <div className={`px-4 py-2 border-t rounded-b-xl ${

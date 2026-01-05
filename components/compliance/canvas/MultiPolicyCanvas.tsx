@@ -55,6 +55,8 @@ import {
 import {
   type ConditionData,
   generateConditionStatement,
+  generateConditionItems,
+  generateOutputStatement,
 } from "@/lib/condition-statement";
 
 // Register custom node types
@@ -498,17 +500,25 @@ export function MultiPolicyCanvas({
     edgesRef.current = edges;
   }, [nodes, edges]);
 
-  // Memoized fingerprint of condition-related node data to trigger statement regeneration
+  // Memoized fingerprint of condition and output node data to trigger statement regeneration
   // when values change (not just when edges change)
   const conditionDataFingerprint = useMemo(() => {
     const fingerprints: string[] = [];
     nodes.forEach(node => {
       if (node.type === "attribute" || node.type === "operator" || node.type === "value") {
-        // Include relevant data fields that affect the statement
+        // Include relevant data fields that affect the condition statement
         const relevantData = {
           attribute: node.data.attribute,
           operator: node.data.operator,
           value: node.data.value,
+        };
+        fingerprints.push(`${node.id}:${JSON.stringify(relevantData)}`);
+      }
+      // Also track output node changes for output statement regeneration
+      if (node.type === "output") {
+        const relevantData = {
+          outputType: node.data.outputType,
+          output: node.data.output,
         };
         fingerprints.push(`${node.id}:${JSON.stringify(relevantData)}`);
       }
@@ -812,6 +822,8 @@ export function MultiPolicyCanvas({
       attribute: attributeNode.data.attribute,
       operator: operatorNode.data.operator,
       value: valueNode.data.value,
+      sourceRegulation: attributeNode.data.sourceRegulation,
+      expiryDate: attributeNode.data.expiryDate,
     };
   }, []);
 
@@ -861,6 +873,47 @@ export function MultiPolicyCanvas({
 
     return { conditions, conditionLogic: detectedConditionLogic };
   }, [traceConditionForStatement]);
+
+  // Get connected output data for a policy node
+  const getConnectedOutputData = useCallback((policyNodeId: string): {
+    outputType: string;
+    output: Record<string, any>;
+  } | null => {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    // Find output nodes connected to this policy (directly or via merge strategy)
+    const directEdges = currentEdges.filter(e => e.target === policyNodeId);
+
+    for (const edge of directEdges) {
+      const sourceNode = currentNodes.find(n => n.id === edge.source);
+      if (!sourceNode) continue;
+
+      // Direct output node connection
+      if (sourceNode.type === "output") {
+        return {
+          outputType: sourceNode.data.outputType,
+          output: sourceNode.data.output || {},
+        };
+      }
+
+      // Merge strategy node - trace back to find output node
+      if (sourceNode.type === "mergeStrategy") {
+        const toMergeEdges = currentEdges.filter(e => e.target === sourceNode.id);
+        for (const toMergeEdge of toMergeEdges) {
+          const outputNode = currentNodes.find(n => n.id === toMergeEdge.source && n.type === "output");
+          if (outputNode) {
+            return {
+              outputType: outputNode.data.outputType,
+              output: outputNode.data.output || {},
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  }, []);
 
   // Save a new policy - defined early so it can be used in useEffects
   const handleSaveNewPolicy = useCallback(async (nodeId: string, status: "draft" | "published" = "draft") => {
@@ -1315,6 +1368,15 @@ export function MultiPolicyCanvas({
           const { conditions, conditionLogic } = getConnectedConditionsData(node.id);
           const conditionStatement = generateConditionStatement(conditions, conditionLogic);
 
+          // Generate structured condition items for rendering with citations
+          const { items: conditionItems, connector: conditionConnector } = generateConditionItems(conditions, conditionLogic);
+
+          // Generate output statement for this policy node
+          const outputData = getConnectedOutputData(node.id);
+          const outputStatement = outputData
+            ? generateOutputStatement(outputData.outputType, outputData.output)
+            : '';
+
           if (data.isNew) {
             // New unsaved policy - inject save handler
             return {
@@ -1322,6 +1384,9 @@ export function MultiPolicyCanvas({
               data: {
                 ...data,
                 conditionStatement,
+                conditionItems,
+                conditionConnector,
+                outputStatement,
                 isSaving: savingPolicies.has(node.id),
                 onSave: () => handleShowSaveOptionsDialog(node.id),
               },
@@ -1333,6 +1398,9 @@ export function MultiPolicyCanvas({
               data: {
                 ...data,
                 conditionStatement,
+                conditionItems,
+                conditionConnector,
+                outputStatement,
                 isPublishing: publishingPolicies.has(node.id),
                 onPublish: () => handlePublishPolicy(node.id, data._id!),
                 isDeleting: deletingPolicies.has(node.id),
@@ -1347,6 +1415,9 @@ export function MultiPolicyCanvas({
               data: {
                 ...data,
                 conditionStatement,
+                conditionItems,
+                conditionConnector,
+                outputStatement,
                 hasPendingChanges,
                 isSavingAsDraft: savingPolicies.has(node.id),
                 onSaveAsDraft: hasPendingChanges
@@ -1364,7 +1435,7 @@ export function MultiPolicyCanvas({
         return node;
       })
     );
-  }, [savingPolicies, publishingPolicies, deletingPolicies, originalPolicyEdges, edges, setNodes, handleShowSaveOptionsDialog, handlePublishPolicy, handleSavePublishedAsDraft, handleShowDeleteConfirmDialog, onDeletePolicy, getConnectedConditionsData, conditionDataFingerprint]);
+  }, [savingPolicies, publishingPolicies, deletingPolicies, originalPolicyEdges, edges, setNodes, handleShowSaveOptionsDialog, handlePublishPolicy, handleSavePublishedAsDraft, handleShowDeleteConfirmDialog, onDeletePolicy, getConnectedConditionsData, getConnectedOutputData, conditionDataFingerprint]);
 
   // Validate connection based on port types
   const isValidConnection = useCallback((connection: Connection) => {
