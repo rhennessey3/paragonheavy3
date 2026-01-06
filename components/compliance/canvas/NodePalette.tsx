@@ -89,6 +89,14 @@ const LOGICAL_OPERATORS = [
   { value: "OR", label: "Any Match (OR)", shortLabel: "OR", symbol: "|", color: "bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100", description: "Any condition being true will trigger the policy" },
 ];
 
+// Condition group for branching
+const CONDITION_GROUP = {
+  id: "conditionGroup",
+  label: "Condition Group",
+  shortLabel: "IF→",
+  description: "Create branches from a parent condition. Use this to share a parent condition (e.g., width > 13ft) across multiple sub-conditions with different outputs.",
+};
+
 // Merge strategies for combining multiple outputs
 const MERGE_STRATEGIES = [
   { value: "max", label: "Maximum", shortLabel: "MAX", description: "Use the highest value from all matching outputs" },
@@ -435,6 +443,42 @@ export function NodePalette({
             {/* Condition Logic */}
             <CollapsibleSection title="Condition Logic" icon={GitMerge}>
               <div className="space-y-1.5">
+                {/* Condition Group Node */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <DraggableItem
+                        type="conditionGroup"
+                        data={{
+                          label: "Condition Group",
+                          branches: [
+                            { id: "branch_1", label: "Branch 1" },
+                            { id: "branch_2", label: "Branch 2" },
+                          ],
+                        }}
+                      >
+                        <div className="flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors bg-cyan-50 text-cyan-700 border-cyan-300 hover:bg-cyan-100">
+                          <div className="w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm bg-cyan-200 text-cyan-800">
+                            {CONDITION_GROUP.shortLabel}
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-xs font-semibold text-cyan-800 uppercase tracking-wide">
+                              {CONDITION_GROUP.label}
+                            </div>
+                            <div className="text-[10px] text-cyan-500 line-clamp-1">
+                              Branch parent condition
+                            </div>
+                          </div>
+                        </div>
+                      </DraggableItem>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    <p className="max-w-xs">{CONDITION_GROUP.description}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* AND/OR Logic Nodes */}
                 {LOGICAL_OPERATORS.map((logic) => (
                   <Tooltip key={logic.value}>
                     <TooltipTrigger asChild>

@@ -29,8 +29,10 @@ import { OperatorNode } from "./nodes/OperatorNode";
 import { ValueNode } from "./nodes/ValueNode";
 import { OutputNode } from "./nodes/OutputNode";
 import { PolicyCenterNode } from "./nodes/PolicyCenterNode";
-import { 
-  type CompliancePolicy, 
+import { ConditionLogicNode } from "./nodes/ConditionLogicNode";
+import { ConditionGroupNode } from "./nodes/ConditionGroupNode";
+import {
+  type CompliancePolicy,
   type PolicyType,
   type PolicyCondition,
 } from "@/lib/compliance";
@@ -42,14 +44,18 @@ const nodeTypes = {
   value: ValueNode,
   output: OutputNode,
   policyCenter: PolicyCenterNode,
+  conditionLogic: ConditionLogicNode,
+  conditionGroup: ConditionGroupNode,
 };
 
 // Port type compatibility rules
 const PORT_COMPATIBILITY: Record<string, string[]> = {
-  attribute: ["operator"],      // Attributes connect to operators
-  operator: ["value"],          // Operators connect to values
-  value: ["output"],            // Values connect to outputs
-  output: ["policyCenter"],     // Outputs connect to policy center
+  attribute: ["operator"],                    // Attributes connect to operators
+  operator: ["value"],                        // Operators connect to values
+  value: ["output", "conditionGroup", "conditionLogic"],  // Values connect to outputs, groups, or logic
+  conditionGroup: ["conditionLogic"],         // Groups connect to logic nodes
+  conditionLogic: ["output"],                 // Logic nodes connect to outputs
+  output: ["policyCenter"],                   // Outputs connect to policy center
 };
 
 // Edge styles
@@ -183,50 +189,110 @@ export function CanvasBuilder({
     }));
   }, [nodes, setNodes, setEdges]);
 
+  // Helper to trace back a complete condition chain from a given node
+  const traceConditionChain = useCallback((startNodeId: string): PolicyCondition | null => {
+    // Find the value node that connects to this node
+    const valueEdge = edges.find(e => e.target === startNodeId);
+    if (!valueEdge) return null;
+
+    const valueNode = nodes.find(n => n.id === valueEdge.source && n.type === "value");
+    if (!valueNode) return null;
+
+    const operatorEdge = edges.find(e => e.target === valueNode.id);
+    if (!operatorEdge) return null;
+
+    const operatorNode = nodes.find(n => n.id === operatorEdge.source && n.type === "operator");
+    if (!operatorNode) return null;
+
+    const attributeEdge = edges.find(e => e.target === operatorNode.id);
+    if (!attributeEdge) return null;
+
+    const attributeNode = nodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
+    if (!attributeNode) return null;
+
+    return {
+      id: attributeNode.data.id || generateId(),
+      attribute: attributeNode.data.attribute,
+      operator: operatorNode.data.operator,
+      value: valueNode.data.value,
+      sourceRegulation: attributeNode.data.sourceRegulation,
+      notes: attributeNode.data.notes,
+    };
+  }, [nodes, edges]);
+
   // Serialize canvas to policy format
   const serializeToPolicy = useCallback((): Partial<CompliancePolicy> => {
     const conditions: PolicyCondition[] = [];
-    
-    // Find all complete chains: attribute -> operator -> value -> output -> policyCenter
+
+    // Find all complete chains that connect to policyCenter
     const outputNodes = nodes.filter(n => n.type === "output");
-    
+
     for (const outputNode of outputNodes) {
       // Check if this output is connected to the policy center
       const toPolicy = edges.find(e => e.source === outputNode.id && e.target === "policy_center");
       if (!toPolicy) continue;
 
-      // Trace back through the chain
-      const valueEdge = edges.find(e => e.target === outputNode.id);
-      if (!valueEdge) continue;
-      const valueNode = nodes.find(n => n.id === valueEdge.source && n.type === "value");
-      if (!valueNode) continue;
+      // Check what connects to this output node
+      const inputEdge = edges.find(e => e.target === outputNode.id);
+      if (!inputEdge) continue;
 
-      const operatorEdge = edges.find(e => e.target === valueNode.id);
-      if (!operatorEdge) continue;
-      const operatorNode = nodes.find(n => n.id === operatorEdge.source && n.type === "operator");
-      if (!operatorNode) continue;
+      const sourceNode = nodes.find(n => n.id === inputEdge.source);
+      if (!sourceNode) continue;
 
-      const attributeEdge = edges.find(e => e.target === operatorNode.id);
-      if (!attributeEdge) continue;
-      const attributeNode = nodes.find(n => n.id === attributeEdge.source && n.type === "attribute");
-      if (!attributeNode) continue;
+      // Case 1: Direct value -> output connection (simple chain)
+      if (sourceNode.type === "value") {
+        const condition = traceConditionChain(outputNode.id);
+        if (condition) {
+          conditions.push({
+            ...condition,
+            output: outputNode.data.output,
+          });
+        }
+      }
 
-      // Build the condition from the chain
-      const condition: PolicyCondition = {
-        id: attributeNode.data.id || generateId(),
-        attribute: attributeNode.data.attribute,
-        operator: operatorNode.data.operator,
-        value: valueNode.data.value,
-        sourceRegulation: attributeNode.data.sourceRegulation,
-        notes: attributeNode.data.notes,
-        output: outputNode.data.output,
-      };
+      // Case 2: conditionLogic -> output connection (combined conditions)
+      else if (sourceNode.type === "conditionLogic") {
+        const logicNode = sourceNode;
+        const logicType = logicNode.data.conditionLogic as "AND" | "OR";
 
-      conditions.push(condition);
+        // Find all edges that connect TO the logic node
+        const logicInputEdges = edges.filter(e => e.target === logicNode.id);
+        const subConditions: PolicyCondition[] = [];
+
+        for (const logicInputEdge of logicInputEdges) {
+          const inputNode = nodes.find(n => n.id === logicInputEdge.source);
+          if (!inputNode) continue;
+
+          // If input is a value node, trace back the chain
+          if (inputNode.type === "value") {
+            const condition = traceConditionChain(logicNode.id);
+            if (condition) {
+              subConditions.push(condition);
+            }
+          }
+
+          // If input is from a conditionGroup, trace each branch
+          else if (inputNode.type === "conditionGroup") {
+            // Find what connects to the group (parent condition)
+            const parentCondition = traceConditionChain(inputNode.id);
+            if (parentCondition) {
+              subConditions.push(parentCondition);
+            }
+          }
+        }
+
+        // Add all sub-conditions with the output
+        for (const subCond of subConditions) {
+          conditions.push({
+            ...subCond,
+            output: outputNode.data.output,
+          });
+        }
+      }
     }
 
     const policyCenterNode = nodes.find(n => n.id === "policy_center");
-    
+
     return {
       _id: initialPolicy?._id,
       jurisdictionId,
@@ -238,7 +304,7 @@ export function CanvasBuilder({
       baseOutput: policyCenterNode?.data.baseOutput,
       mergeStrategies: policyCenterNode?.data.mergeStrategies,
     };
-  }, [nodes, edges, initialPolicy, jurisdictionId, policyType, policyName]);
+  }, [nodes, edges, initialPolicy, jurisdictionId, policyType, policyName, traceConditionChain]);
 
   // Handle save
   const handleSave = useCallback(() => {

@@ -34,8 +34,12 @@ export interface PolicyCenterNodeData {
   isPublishing?: boolean;
   /** Number of connected conditions */
   conditionCount?: number;
-  /** How to combine conditions: AND (all must match) or OR (any must match) */
-  conditionLogic?: "AND" | "OR";
+  /** How to combine conditions:
+   * - AND: all must match
+   * - OR: any must match
+   * - ACCUMULATE: evaluate each independently, merge outputs
+   */
+  conditionLogic?: "AND" | "OR" | "ACCUMULATE";
   /** Whether this published policy has pending (unsaved) changes */
   hasPendingChanges?: boolean;
   /** Callback to save changes as a new draft version */
@@ -194,36 +198,60 @@ export const PolicyCenterNode = memo(function PolicyCenterNode({
                   }
                 </Badge>
               )}
-              {/* AND/OR Logic Toggle - show when conditions exist */}
+              {/* AND/OR/ACCUMULATE Logic Toggle - show when conditions exist */}
               {(data.conditionCount ?? 0) > 0 && (
-                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateData({ conditionLogic: "AND" });
-                    }}
-                    className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
-                      (data.conditionLogic || "AND") === "AND"
-                        ? "bg-white shadow-sm text-blue-700"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    AND
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateData({ conditionLogic: "OR" });
-                    }}
-                    className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
-                      data.conditionLogic === "OR"
-                        ? "bg-white shadow-sm text-orange-700"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    OR
-                  </button>
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateData({ conditionLogic: "AND" });
+                        }}
+                        className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
+                          (data.conditionLogic || "AND") === "AND"
+                            ? "bg-white shadow-sm text-blue-700"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        AND
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateData({ conditionLogic: "OR" });
+                        }}
+                        className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
+                          data.conditionLogic === "OR"
+                            ? "bg-white shadow-sm text-orange-700"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        OR
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateData({ conditionLogic: "ACCUMULATE" });
+                        }}
+                        className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
+                          data.conditionLogic === "ACCUMULATE"
+                            ? "bg-white shadow-sm text-green-700"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        ACC
+                      </button>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <div className="text-xs space-y-1">
+                      <p><strong>AND:</strong> All conditions must match</p>
+                      <p><strong>OR:</strong> Any condition can match</p>
+                      <p><strong>ACC:</strong> Accumulate - evaluate each condition independently, merge all triggered outputs</p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
           </div>

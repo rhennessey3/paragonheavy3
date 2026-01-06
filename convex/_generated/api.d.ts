@@ -25,6 +25,7 @@ import type * as loads from "../loads.js";
 import type * as organizations from "../organizations.js";
 import type * as permitTypes from "../permitTypes.js";
 import type * as policies from "../policies.js";
+import type * as seedPAEscortPolicy from "../seedPAEscortPolicy.js";
 import type * as stateFields from "../stateFields.js";
 import type * as systemFields from "../systemFields.js";
 import type * as trailers from "../trailers.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   organizations: typeof organizations;
   permitTypes: typeof permitTypes;
   policies: typeof policies;
+  seedPAEscortPolicy: typeof seedPAEscortPolicy;
   stateFields: typeof stateFields;
   systemFields: typeof systemFields;
   trailers: typeof trailers;

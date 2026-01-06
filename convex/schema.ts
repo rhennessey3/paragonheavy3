@@ -423,19 +423,30 @@ export default defineSchema({
       priority: v.optional(v.number()),         // For ordering/precedence
       // The output this specific condition contributes
       output: v.optional(v.any()),              // Partial output when this condition matches
+      // Sub-conditions for compound AND logic within a single condition
+      subConditions: v.optional(v.array(v.object({
+        attribute: v.string(),
+        operator: v.string(),
+        value: v.any(),
+      }))),
     })),
 
-    // How to combine conditions: AND (all must match) or OR (any must match)
-    conditionLogic: v.optional(v.union(v.literal("AND"), v.literal("OR"))),
+    // How to combine conditions:
+    // - AND: all conditions must match
+    // - OR: any condition must match
+    // - ACCUMULATE: evaluate each condition independently, merge all triggered outputs
+    conditionLogic: v.optional(v.union(
+      v.literal("AND"),
+      v.literal("OR"),
+      v.literal("ACCUMULATE")
+    )),
 
     // Default/base output for the policy (applied when any condition matches)
     baseOutput: v.optional(v.any()),
     
     // Merge strategies for combining outputs from multiple matching conditions
-    mergeStrategies: v.optional(v.object({
-      // Each field in the output can have its own merge strategy
-      // e.g., { front_escorts: "MAX", rear_escorts: "MAX", height_pole: "OR" }
-    })),
+    // e.g., { front_escorts: "max", rear_escorts: "max", height_pole: "union" }
+    mergeStrategies: v.optional(v.any()),
     
     // Effective date range
     effectiveFrom: v.optional(v.number()),

@@ -9,7 +9,7 @@ import { Id } from "@/convex/_generated/dataModel";
 // =============================================================================
 
 // Load/context attributes that rules can evaluate
-export type RuleAttribute = 
+export type RuleAttribute =
   | 'width_ft' | 'height_ft' | 'length_ft' | 'combined_length_ft'
   | 'front_overhang_ft' | 'rear_overhang_ft' | 'left_overhang_ft' | 'right_overhang_ft'
   | 'gross_weight_lbs' | 'axle_weight_lbs'
@@ -19,14 +19,19 @@ export type RuleAttribute =
   | 'permit_type' | 'is_mobile_home' | 'is_modular_housing'
   | 'is_superload' | 'is_construction_equipment' | 'vehicle_classification'
   | 'on_bridge' | 'urban_area' | 'time_of_day'
-  | 'min_speed_capable_mph' | 'has_police_escort';
+  | 'min_speed_capable_mph' | 'has_police_escort'
+  // Bridge crossing attributes (atomic for multi-state reusability)
+  | 'restriction_reduced_speed' | 'restriction_solo_occupy' | 'bridge_traffic_direction'
+  // Police escort attribute (for displacement rules)
+  | 'police_escort';
 
 export type ConditionOperator =
   | '>' | '>=' | '<' | '<=' | '=' | '!='
   | 'between' | 'in' | 'not_in';
 
 // Logical operator for combining conditions
-export type LogicalOperator = 'AND' | 'OR';
+// ACCUMULATE: evaluates each condition independently and merges all triggered outputs
+export type LogicalOperator = 'AND' | 'OR' | 'ACCUMULATE';
 
 // Single condition in an IF clause
 export interface RuleConditionClause {
@@ -236,6 +241,22 @@ export const RULE_ATTRIBUTES: AttributeConfig[] = [
   { value: 'is_superload', label: 'Is Superload', description: 'Load exceeds superload thresholds', type: 'boolean' },
   { value: 'is_construction_equipment', label: 'Is Construction Equipment', description: 'Load is construction equipment', type: 'boolean' },
   { value: 'has_police_escort', label: 'Has Police Escort', description: 'Whether police escort is present', type: 'boolean' },
+  // Bridge crossing attributes (atomic for multi-state reusability)
+  { value: 'restriction_reduced_speed', label: 'Bridge: Reduced Speed', description: 'Bridge crossing requires reduced speed', type: 'boolean' },
+  { value: 'restriction_solo_occupy', label: 'Bridge: Solo/Occupy', description: 'Bridge crossing requires solo occupancy (>1 lane)', type: 'boolean' },
+  {
+    value: 'bridge_traffic_direction',
+    label: 'Bridge Traffic Direction',
+    description: 'Traffic direction configuration of the bridge',
+    type: 'enum',
+    options: [
+      { value: 'one_way', label: 'One Way' },
+      { value: 'two_way', label: 'Two Way' },
+      { value: 'n_a', label: 'N/A (Not on bridge)' },
+    ]
+  },
+  // Police escort attribute (for displacement rules - displaces private pilot to rear)
+  { value: 'police_escort', label: 'Police Escort Present', description: 'Whether a police escort is present (displaces private pilot to rear)', type: 'boolean' },
 ];
 
 // Operators available for each attribute type
@@ -612,6 +633,12 @@ export interface PolicyCondition {
   priority?: number;                    // For ordering/precedence within policy
   // The output this specific condition contributes when matched
   output?: Partial<EscortRequirement | PermitRequirement | UtilityNoticeRequirement | SpeedRequirement | HoursRequirement | RouteRequirement | DimensionRequirement>;
+  // Sub-conditions for compound AND logic within a single condition
+  subConditions?: Array<{
+    attribute: string;
+    operator: string;
+    value: number | string | boolean | [number, number] | string[];
+  }>;
 }
 
 /**
@@ -914,6 +941,154 @@ export function policyMatchesLoad(
     loadAttributes,
     policy.conditionLogic || 'AND'
   );
+}
+
+// =============================================================================
+// Parallel Accumulator Functions (ACCUMULATE mode)
+// =============================================================================
+
+/**
+ * Merge a single field from multiple outputs using the specified strategy
+ */
+function mergeField(
+  values: (number | boolean | undefined)[],
+  strategy: MergeStrategy
+): number | boolean | undefined {
+  const defined = values.filter((v): v is number | boolean => v !== undefined);
+  if (defined.length === 0) return undefined;
+
+  switch (strategy) {
+    case 'MAX':
+      return Math.max(...(defined as number[]));
+    case 'MIN':
+      return Math.min(...(defined as number[]));
+    case 'OR':
+      return defined.some(v => v === true);
+    case 'SUM':
+      return (defined as number[]).reduce((a, b) => a + b, 0);
+    case 'FIRST':
+      return defined[0];
+    case 'LAST':
+      return defined[defined.length - 1];
+    default:
+      return defined[0];
+  }
+}
+
+/**
+ * Escort output type for accumulation (matches OutputNode fields)
+ */
+export interface EscortOutput {
+  frontPilots?: number;
+  rearPilots?: number;
+  heightPole?: boolean;
+  policeRequired?: boolean;
+}
+
+/**
+ * Merge multiple escort outputs using merge strategies.
+ * This is the core of the Parallel Accumulator pattern.
+ */
+export function mergeOutputs(
+  outputs: Array<Partial<EscortOutput>>,
+  strategies: Partial<Record<keyof EscortOutput, MergeStrategy>> = {}
+): EscortOutput {
+  if (outputs.length === 0) return {};
+
+  // Use default merge strategies if not specified
+  const mergeStrategies: Record<keyof EscortOutput, MergeStrategy> = {
+    frontPilots: strategies.frontPilots || 'MAX',
+    rearPilots: strategies.rearPilots || 'MAX',
+    heightPole: strategies.heightPole || 'OR',
+    policeRequired: strategies.policeRequired || 'OR',
+  };
+
+  const result: EscortOutput = {};
+
+  // Merge each field
+  const frontPilots = mergeField(
+    outputs.map(o => o.frontPilots),
+    mergeStrategies.frontPilots
+  );
+  if (frontPilots !== undefined) result.frontPilots = frontPilots as number;
+
+  const rearPilots = mergeField(
+    outputs.map(o => o.rearPilots),
+    mergeStrategies.rearPilots
+  );
+  if (rearPilots !== undefined) result.rearPilots = rearPilots as number;
+
+  const heightPole = mergeField(
+    outputs.map(o => o.heightPole),
+    mergeStrategies.heightPole
+  );
+  if (heightPole !== undefined) result.heightPole = heightPole as boolean;
+
+  const policeRequired = mergeField(
+    outputs.map(o => o.policeRequired),
+    mergeStrategies.policeRequired
+  );
+  if (policeRequired !== undefined) result.policeRequired = policeRequired as boolean;
+
+  return result;
+}
+
+/**
+ * Evaluate a policy in ACCUMULATE mode.
+ * Each condition is evaluated independently, and outputs from all matching
+ * conditions are merged using the specified merge strategies.
+ *
+ * This implements the Parallel Accumulator pattern where multiple
+ * condition→output streams can fire simultaneously.
+ *
+ * Supports compound conditions via subConditions array - primary condition
+ * and all subConditions must match (AND logic) for the condition to fire.
+ */
+export function evaluatePolicyWithAccumulation(
+  conditions: PolicyCondition[],
+  loadAttributes: Partial<Record<RuleAttribute, number | string | boolean>>,
+  mergeStrategies?: Partial<Record<string, MergeStrategy>>
+): { matched: boolean; matchedConditions: PolicyCondition[]; output: EscortOutput } {
+  const matchedConditions: PolicyCondition[] = [];
+  const matchedOutputs: Array<Partial<EscortOutput>> = [];
+
+  for (const condition of conditions) {
+    // Check primary condition
+    const actualValue = loadAttributes[condition.attribute];
+    const primaryMatches = evaluateCondition(condition.operator, condition.value, actualValue);
+
+    if (!primaryMatches) continue;
+
+    // Check sub-conditions (AND logic) - all must match
+    let allSubConditionsMatch = true;
+    if (condition.subConditions && condition.subConditions.length > 0) {
+      for (const subCond of condition.subConditions) {
+        const subValue = loadAttributes[subCond.attribute as RuleAttribute];
+        if (!evaluateCondition(subCond.operator as ConditionOperator, subCond.value, subValue)) {
+          allSubConditionsMatch = false;
+          break;
+        }
+      }
+    }
+
+    // Only add to matched if primary AND all sub-conditions match
+    if (allSubConditionsMatch) {
+      matchedConditions.push(condition);
+      if (condition.output) {
+        matchedOutputs.push(condition.output as Partial<EscortOutput>);
+      }
+    }
+  }
+
+  if (matchedOutputs.length === 0) {
+    return { matched: matchedConditions.length > 0, matchedConditions, output: {} };
+  }
+
+  return {
+    matched: true,
+    matchedConditions,
+    output: mergeOutputs(matchedOutputs, mergeStrategies as Partial<Record<keyof EscortOutput, MergeStrategy>>)
+  };
 }
 
 // =============================================================================

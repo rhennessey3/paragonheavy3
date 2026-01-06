@@ -32,6 +32,11 @@ export const createPolicy = mutation({
       notes: v.optional(v.string()),
       priority: v.optional(v.number()),
       output: v.optional(v.any()),
+      subConditions: v.optional(v.array(v.object({
+        attribute: v.string(),
+        operator: v.string(),
+        value: v.any(),
+      }))),
     }))),
     baseOutput: v.optional(v.any()),
     mergeStrategies: v.optional(v.any()),
@@ -43,7 +48,8 @@ export const createPolicy = mutation({
     )),
     conditionLogic: v.optional(v.union(
       v.literal("AND"),
-      v.literal("OR")
+      v.literal("OR"),
+      v.literal("ACCUMULATE")
     )),
   },
   handler: async (ctx, args) => {
@@ -94,6 +100,11 @@ export const updatePolicy = mutation({
       notes: v.optional(v.string()),
       priority: v.optional(v.number()),
       output: v.optional(v.any()),
+      subConditions: v.optional(v.array(v.object({
+        attribute: v.string(),
+        operator: v.string(),
+        value: v.any(),
+      }))),
     }))),
     baseOutput: v.optional(v.any()),
     mergeStrategies: v.optional(v.any()),
@@ -101,7 +112,8 @@ export const updatePolicy = mutation({
     effectiveTo: v.optional(v.number()),
     conditionLogic: v.optional(v.union(
       v.literal("AND"),
-      v.literal("OR")
+      v.literal("OR"),
+      v.literal("ACCUMULATE")
     )),
   },
   handler: async (ctx, args) => {
